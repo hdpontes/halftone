@@ -11,10 +11,3 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:?Defina ADMIN_EMAIL nas variaveis do stack}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Defina ADMIN_PASSWORD nas variaveis do stack}
       NEXT_PUBLIC_HOTMART_CHECKOUT_URL: ${NEXT_PUBLIC_HOTMART_CHECKOUT_URL:?Defina NEXT_PUBLIC_HOTMART_CHECKOUT_URL nas variaveis do stack}
-    networks:
-      - postgres_network
-
-networks:
-  postgres_network:
-    external: true
-    name: debora-app_default
