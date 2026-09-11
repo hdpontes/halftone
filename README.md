@@ -1,6 +1,6 @@
 # Halftone Platform
 
-Plataforma de alunos em Next.js, PostgreSQL e Prisma, pronta para build via GitHub e Portainer. O stack usa o PostgreSQL já existente na VPS, conectado pela rede Docker externa `debora-app_default`.
+Plataforma de ferramentas para DTF em Next.js, PostgreSQL e Prisma, pronta para build via GitHub e Portainer. O stack usa o PostgreSQL já existente na VPS, conectado pela rede Docker externa `debora-app_default`.
 
 ## Deploy no Portainer
 
@@ -37,4 +37,4 @@ O checkout exibido na tela de login é definido por `NEXT_PUBLIC_HOTMART_CHECKOU
 
 ## Halftone Studio
 
-Usuários com `accessStatus=ACTIVE` acessam `/halftone` pelo painel. O preview usa Canvas no navegador; a exportação envia a imagem para `POST /api/halftone`, que processa PNG, JPG, WEBP ou TIFF com ImageMagick e retorna um PNG transparente. Os parâmetros aceitos são `lpi` (10-120), `angle` (-90 a 90), `dpi` (150-600) e `dot` (`fine`, `standard` ou `soft`).
+Usuários com `accessStatus=ACTIVE` acessam `/halftone` pelo painel. O preview aplica a retícula no Canvas assim que a imagem é importada; a exportação envia a arte para `POST /api/halftone`, que processa PNG, JPG, WEBP ou TIFF com ImageMagick e retorna um PNG para produção. Os parâmetros aceitos são `mode` (`mono` ou `cmyk`), `lpi` (10-120), `angle` (-90 a 90), `dpi` (150-600), `dot` (`round`, `ellipse` ou `line`), `contrast`, `brightness` e `transparent`.
