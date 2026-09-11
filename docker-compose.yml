@@ -5,6 +5,9 @@ services:
     ports:
       - "3000:3000"
     environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
       DATABASE_URL: ${DATABASE_URL:?Defina DATABASE_URL nas variaveis do stack}
       AUTH_SECRET: ${AUTH_SECRET:?Defina AUTH_SECRET nas variaveis do stack}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:?Defina N8N_WEBHOOK_SECRET nas variaveis do stack}
