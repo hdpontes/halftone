@@ -4,7 +4,13 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Defina DATABASE_URL nas variaveis do stack}
+      AUTH_SECRET: ${AUTH_SECRET:?Defina AUTH_SECRET nas variaveis do stack}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:?Defina N8N_WEBHOOK_SECRET nas variaveis do stack}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Defina ADMIN_EMAIL nas variaveis do stack}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Defina ADMIN_PASSWORD nas variaveis do stack}
+      NEXT_PUBLIC_HOTMART_CHECKOUT_URL: ${NEXT_PUBLIC_HOTMART_CHECKOUT_URL:?Defina NEXT_PUBLIC_HOTMART_CHECKOUT_URL nas variaveis do stack}
     networks:
       - postgres_network
 
