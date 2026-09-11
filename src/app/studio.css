@@ -1,0 +1,21 @@
+.studio { max-width: 1320px; margin: 0 auto; padding: 64px 5vw 80px; }
+.studio-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; margin-bottom: 42px; }
+.studio-header h1 { margin: 12px 0 10px; font-size: clamp(42px, 6vw, 76px); line-height: .95; letter-spacing: -.07em; }
+.studio-header p:not(.eyebrow) { color: var(--muted); max-width: 440px; line-height: 1.55; }
+.studio-grid { display: grid; grid-template-columns: 280px 1fr; gap: 18px; min-height: 600px; }
+.studio-controls { display: flex; flex-direction: column; gap: 28px; padding: 28px; background: var(--ink); color: var(--paper); }
+.control-title { display: flex; justify-content: space-between; border-bottom: 1px solid #484842; padding-bottom: 18px; font: 11px 'DM Mono', monospace; letter-spacing: .1em; }
+.control-title b { color: var(--lime); font: 800 20px 'Manrope', sans-serif; letter-spacing: -.15em; }
+.studio-controls label { margin: 0; color: #a9a59c; font: 10px 'DM Mono', monospace; }
+.studio-controls label strong { float: right; color: var(--lime); font-size: 13px; }
+.studio-controls input[type=range] { display: block; width: 100%; margin-top: 16px; accent-color: var(--lime); }
+.select-control { display: flex; flex-direction: column; gap: 10px; color: #a9a59c; font: 10px 'DM Mono', monospace; }
+.select-control select { appearance: none; padding: 12px 10px; border: 1px solid #484842; background: #242421; color: var(--paper); font: 12px 'Manrope', sans-serif; }
+.spec-note { margin-top: auto; padding-top: 22px; border-top: 1px solid #484842; color: #77736c; font: 10px 'DM Mono', monospace; line-height: 1.7; }
+.spec-note span { color: var(--lime); }.spec-note p { margin: 8px 0 0; }
+.studio-stage { display: flex; flex-direction: column; min-width: 0; padding: 22px; background: #f8f5ef; border: 1px solid var(--line); }
+.dropzone { display: flex; flex: 1; min-height: 550px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 1px dashed #aaa59b; color: var(--muted); cursor: pointer; transition: background .2s, border .2s; }
+.dropzone.dragging, .dropzone:hover { background: #eeeae2; border-color: var(--ink); }.dropzone strong { color: var(--ink); font-size: 18px; }.dropzone span { font-size: 12px; }.dropzone input { display: none; }.upload-mark { display: grid; place-items: center; width: 58px; height: 58px; border: 1px solid var(--ink); border-radius: 50%; color: var(--ink); font-size: 30px; font-weight: 300; }
+.preview-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; color: var(--muted); font: 10px 'DM Mono', monospace; }.preview-header button { background: transparent; color: var(--ink); font: 10px 'DM Mono', monospace; text-decoration: underline; text-transform: uppercase; }
+.canvas-wrap { position: relative; display: grid; place-items: center; min-height: 500px; overflow: hidden; background-color: #e8e3d9; background-image: linear-gradient(45deg, #ddd8ce 25%, transparent 25%), linear-gradient(-45deg, #ddd8ce 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ddd8ce 75%), linear-gradient(-45deg, transparent 75%, #ddd8ce 75%); background-size: 24px 24px; background-position: 0 0, 0 12px, 12px -12px, -12px 0; }.canvas-wrap canvas { display: block; max-width: 100%; max-height: 560px; object-fit: contain; image-rendering: pixelated; }.canvas-label { position: absolute; right: 14px; bottom: 12px; color: #817e76; font: 10px 'DM Mono', monospace; }.studio-actions { display: flex; align-items: center; justify-content: flex-end; gap: 20px; padding-top: 18px; }.studio-actions .button { width: auto; min-width: 230px; }.studio-actions .error { margin-right: auto; }
+@media (max-width: 800px) { .studio { padding: 40px 5vw 60px; }.studio-header { align-items: flex-start; flex-direction: column; }.studio-grid { grid-template-columns: 1fr; }.studio-controls { order: 2; }.studio-stage { min-height: 500px; }.dropzone { min-height: 390px; }.canvas-wrap { min-height: 350px; }.studio-actions { align-items: stretch; flex-direction: column; }.studio-actions .button { width: 100%; } }

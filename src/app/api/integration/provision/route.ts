@@ -1,0 +1,7 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { hashPassword } from "@/lib/password";
+
+const payloadSchema = z.object({ name: z.string().min(2), email: z.string().email(), hotmartId: z.string().optional(), password: z.string().min(8).optional() });
+export async function POST(request: Request) { if (request.headers.get("x-n8n-secret") !== process.env.N8N_WEBHOOK_SECRET) return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); const parsed = payloadSchema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ error: "Payload inválido" }, { status: 400 }); const data = parsed.data; const passwordHash = await hashPassword(data.password || crypto.randomUUID()); const user = await prisma.user.upsert({ where: { email: data.email.toLowerCase() }, update: { name: data.name, accessStatus: "ACTIVE", hotmartId: data.hotmartId }, create: { name: data.name, email: data.email.toLowerCase(), passwordHash, hotmartId: data.hotmartId, accessStatus: "ACTIVE" } }); await prisma.auditLog.create({ data: { action: "USER_PROVISIONED", email: user.email, metadata: { hotmartId: data.hotmartId } } }); return NextResponse.json({ ok: true, userId: user.id, email: user.email }); }
