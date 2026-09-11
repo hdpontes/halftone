@@ -5,3 +5,10 @@ services:
     ports:
       - "3000:3000"
     env_file: .env
+    networks:
+      - postgres_network
+
+networks:
+  postgres_network:
+    external: true
+    name: debora-app_default
