@@ -12,10 +12,10 @@ export default function HalftoneStudio() {
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
+    if (!rootRef.current) return;
+    const container: HTMLDivElement = rootRef.current;
 
-    const $ = <T extends HTMLElement = HTMLElement>(id: string) => root.querySelector<T>("#" + id)!;
+    const $ = <T extends HTMLElement = HTMLElement>(id: string) => container.querySelector<T>("#" + id)!;
     const viewCanvas = $<HTMLCanvasElement>("viewCanvas");
     const vctx = viewCanvas.getContext("2d", { willReadFrequently: true })!;
     const original = document.createElement("canvas");
@@ -124,21 +124,21 @@ export default function HalftoneStudio() {
       $("gainVal").textContent = Number(($("gain") as HTMLInputElement).value).toFixed(2);
       $("removeVal").textContent = ($("removePower") as HTMLInputElement).value;
       $("bgPowerVal").textContent = ($("bgPower") as HTMLInputElement).value;
-      const colorResidualVal = root.querySelector("#colorResidualVal");
+      const colorResidualVal = container.querySelector("#colorResidualVal");
       if (colorResidualVal) colorResidualVal.textContent = ($("colorResidual") as HTMLInputElement).value;
       $("satVal").textContent = ($("saturation") as HTMLInputElement).value + "%";
       $("contrastVal").textContent = ($("contrast") as HTMLInputElement).value;
       $("protectTolVal").textContent = ($("protectTol") as HTMLInputElement).value;
-      const colorTolVal = root.querySelector("#colorTolVal");
+      const colorTolVal = container.querySelector("#colorTolVal");
       if (colorTolVal) colorTolVal.textContent = ($("colorTol") as HTMLInputElement).value;
-      const bgColorText = root.querySelector("#bgColorText");
+      const bgColorText = container.querySelector("#bgColorText");
       if (bgColorText) bgColorText.textContent = hex(sampledBgColor);
-      const bgColorSwatch = root.querySelector<HTMLElement>("#bgColorSwatch");
+      const bgColorSwatch = container.querySelector<HTMLElement>("#bgColorSwatch");
       if (bgColorSwatch) bgColorSwatch.style.background = hex(sampledBgColor);
       $("zoomVal").textContent = Math.round(zoom * 100) + "%";
       $("zoomBadge").textContent = Math.round(zoom * 100) + "%";
       $("customSizeBox").style.display = sizePreset === "custom" ? "block" : "none";
-      const wrap = root.querySelector<HTMLElement>("#colorResidualWrap");
+      const wrap = container.querySelector<HTMLElement>("#colorResidualWrap");
       if (wrap) wrap.style.display = mode === "color" ? "block" : "none";
     }
     function targetSize(): [number, number] {
@@ -977,8 +977,8 @@ export default function HalftoneStudio() {
       if (!img) return;
       pickingBg = false;
       pickingProtect = false;
-      const pickBgBtn = root.querySelector("#pickBgBtn");
-      const pickProtect = root.querySelector("#pickProtect");
+      const pickBgBtn = container.querySelector("#pickBgBtn");
+      const pickProtect = container.querySelector("#pickProtect");
       if (pickBgBtn) pickBgBtn.classList.remove("on");
       if (pickProtect) pickProtect.classList.remove("on");
       updatePickCursor();
@@ -1157,28 +1157,28 @@ export default function HalftoneStudio() {
     };
     $("fileInput").addEventListener("change", onFileInput);
 
-    root.querySelectorAll<HTMLButtonElement>(".mode").forEach((b) =>
+    container.querySelectorAll<HTMLButtonElement>(".mode").forEach((b) =>
       b.addEventListener("click", () => {
-        root.querySelectorAll(".mode").forEach((x) => x.classList.remove("active"));
+        container.querySelectorAll(".mode").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
         mode = b.dataset.mode as typeof mode;
         if (mode === "color" && !manualBgColor) detectBorderColor(false);
         process();
       })
     );
-    root.querySelectorAll<HTMLButtonElement>("#sizeChips .chip").forEach((b) =>
+    container.querySelectorAll<HTMLButtonElement>("#sizeChips .chip").forEach((b) =>
       b.addEventListener("click", () => {
-        root.querySelectorAll("#sizeChips .chip").forEach((x) => x.classList.remove("active"));
+        container.querySelectorAll("#sizeChips .chip").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
         sizePreset = b.dataset.size as typeof sizePreset;
         labels();
         process();
       })
     );
-    root.querySelectorAll<HTMLButtonElement>("#dpiChips .chip").forEach((b) =>
+    container.querySelectorAll<HTMLButtonElement>("#dpiChips .chip").forEach((b) =>
       b.addEventListener("click", () => {
         const beforePx = img ? getCustomPx() : null;
-        root.querySelectorAll("#dpiChips .chip").forEach((x) => x.classList.remove("active"));
+        container.querySelectorAll("#dpiChips .chip").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
         dpi = Number(b.dataset.dpi);
         if (img && beforePx) setCustomInputsFromPx(beforePx[0], beforePx[1]);
@@ -1186,16 +1186,16 @@ export default function HalftoneStudio() {
         process();
       })
     );
-    root.querySelectorAll<HTMLButtonElement>("#lpiChips .chip").forEach((b) =>
+    container.querySelectorAll<HTMLButtonElement>("#lpiChips .chip").forEach((b) =>
       b.addEventListener("click", () => {
-        root.querySelectorAll("#lpiChips .chip").forEach((x) => x.classList.remove("active"));
+        container.querySelectorAll("#lpiChips .chip").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
         lpi = Number(b.dataset.lpi);
         process();
       })
     );
     ["gain", "removePower", "bgPower", "colorResidual", "saturation", "contrast", "protectTol", "colorTol"].forEach((id) => {
-      const el = root.querySelector<HTMLInputElement>("#" + id);
+      const el = container.querySelector<HTMLInputElement>("#" + id);
       if (!el) return;
       el.addEventListener("input", labels);
       el.addEventListener("change", process);
@@ -1299,9 +1299,9 @@ export default function HalftoneStudio() {
     beforeBtn.addEventListener("pointerdown", onBeforeDown);
     ["pointerup", "pointercancel", "mouseleave"].forEach((ev) => beforeBtn.addEventListener(ev, onBeforeUp));
 
-    root.querySelectorAll<HTMLButtonElement>(".bgbtn").forEach((b) =>
+    container.querySelectorAll<HTMLButtonElement>(".bgbtn").forEach((b) =>
       b.addEventListener("click", () => {
-        root.querySelectorAll(".bgbtn").forEach((x) => x.classList.remove("active"));
+        container.querySelectorAll(".bgbtn").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
         previewBg = b.dataset.bg as typeof previewBg;
         const w = $("canvasWrap");
@@ -1378,7 +1378,7 @@ export default function HalftoneStudio() {
     };
     viewCanvas.addEventListener("click", onCanvasClick);
 
-    const mobilePreviewJump = root.querySelector("#mobilePreviewJump");
+    const mobilePreviewJump = container.querySelector("#mobilePreviewJump");
     const onJumpClick = () => {
       $("viewer").scrollIntoView({ behavior: "smooth", block: "center" });
       if (result.width) setTimeout(fit, 260);
