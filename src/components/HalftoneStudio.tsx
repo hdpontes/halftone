@@ -23,12 +23,14 @@ export default function HalftoneStudio() {
     const punched = document.createElement("canvas");
     const result = document.createElement("canvas");
     const mask = document.createElement("canvas");
+    const displayCrop = document.createElement("canvas");
     const octx = original.getContext("2d", { willReadFrequently: true })!;
     const cctx = clean.getContext("2d", { willReadFrequently: true })!;
     const pctx = punched.getContext("2d", { willReadFrequently: true })!;
     const rctx = result.getContext("2d", { willReadFrequently: true })!;
     const mctx = mask.getContext("2d", { willReadFrequently: true })!;
-    [vctx, octx, cctx, pctx, rctx, mctx].forEach((c) => {
+    const dctx = displayCrop.getContext("2d", { willReadFrequently: true })!;
+    [vctx, octx, cctx, pctx, rctx, mctx, dctx].forEach((c) => {
       c.imageSmoothingEnabled = false;
       c.imageSmoothingQuality = "low";
     });
@@ -937,8 +939,19 @@ export default function HalftoneStudio() {
       adjust(result);
     }
     function render() {
-      const src = showBefore ? original : result;
+      const srcFull = showBefore ? original : result;
       $("badge").textContent = showBefore ? "Antes / original" : "Depois / resultado";
+      let src: HTMLCanvasElement = srcFull;
+      if (!showBefore && srcFull.width && srcFull.height) {
+        const bounds = computeContentBounds(srcFull);
+        if (bounds && (bounds.x > 0 || bounds.y > 0 || bounds.width !== srcFull.width || bounds.height !== srcFull.height)) {
+          displayCrop.width = bounds.width;
+          displayCrop.height = bounds.height;
+          dctx.clearRect(0, 0, bounds.width, bounds.height);
+          dctx.drawImage(srcFull, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
+          src = displayCrop;
+        }
+      }
       viewCanvas.width = src.width;
       viewCanvas.height = src.height;
       vctx.clearRect(0, 0, src.width, src.height);
@@ -964,7 +977,10 @@ export default function HalftoneStudio() {
       const v = $("viewer");
       const mobile = window.matchMedia("(max-width:920px)").matches;
       const safeSpace = mobile ? 40 : 92;
-      const z = Math.min((v.clientWidth - safeSpace) / result.width, (v.clientHeight - safeSpace) / result.height, 1);
+      const bounds = computeContentBounds(result);
+      const dispW = bounds ? bounds.width : result.width;
+      const dispH = bounds ? bounds.height : result.height;
+      const z = Math.min((v.clientWidth - safeSpace) / dispW, (v.clientHeight - safeSpace) / dispH, 1);
       zoom = Math.max(0.05, z);
       ($("zoom") as HTMLInputElement).value = String(Math.round(zoom * 100));
       render();
@@ -1004,6 +1020,52 @@ export default function HalftoneStudio() {
       setStatus("Pronto. Sua arte foi processada com sucesso.");
       loading(false);
     }
+    function computeContentBounds(canvas: HTMLCanvasElement) {
+      const w = canvas.width,
+        h = canvas.height;
+      if (!w || !h) return null;
+      const boundsCtx = canvas.getContext("2d", { willReadFrequently: true })!;
+      const data = boundsCtx.getImageData(0, 0, w, h).data;
+      const ALPHA_THRESHOLD = 8;
+      let top = -1,
+        bottom = -1,
+        left = -1,
+        right = -1;
+      for (let y = 0; y < h && top < 0; y++) {
+        for (let x = 0; x < w; x++) {
+          if (data[(y * w + x) * 4 + 3] > ALPHA_THRESHOLD) {
+            top = y;
+            break;
+          }
+        }
+      }
+      if (top < 0) return null;
+      for (let y = h - 1; y >= top && bottom < 0; y--) {
+        for (let x = 0; x < w; x++) {
+          if (data[(y * w + x) * 4 + 3] > ALPHA_THRESHOLD) {
+            bottom = y;
+            break;
+          }
+        }
+      }
+      for (let x = 0; x < w && left < 0; x++) {
+        for (let y = top; y <= bottom; y++) {
+          if (data[(y * w + x) * 4 + 3] > ALPHA_THRESHOLD) {
+            left = x;
+            break;
+          }
+        }
+      }
+      for (let x = w - 1; x >= left && right < 0; x--) {
+        for (let y = top; y <= bottom; y++) {
+          if (data[(y * w + x) * 4 + 3] > ALPHA_THRESHOLD) {
+            right = x;
+            break;
+          }
+        }
+      }
+      return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
+    }
     async function save() {
       if (!result.width || !result.height) {
         setStatus("Gere o halftone antes de baixar.");
@@ -1016,8 +1078,19 @@ export default function HalftoneStudio() {
       setStatus("Preparando arquivo para download...");
       const filename = imgName.replace(/\.(png|jpg|jpeg|webp)$/i, "") + `-halftone-dtf-${mode}.png`;
       try {
+        const bounds = computeContentBounds(result);
+        let exportCanvas: HTMLCanvasElement = result;
+        if (bounds && (bounds.x > 0 || bounds.y > 0 || bounds.width !== result.width || bounds.height !== result.height)) {
+          const cropped = document.createElement("canvas");
+          cropped.width = bounds.width;
+          cropped.height = bounds.height;
+          const cropCtx = cropped.getContext("2d")!;
+          cropCtx.imageSmoothingEnabled = false;
+          cropCtx.drawImage(result, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
+          exportCanvas = cropped;
+        }
         const blob = await new Promise<Blob>((resolve, reject) => {
-          result.toBlob((b) => (b ? resolve(b) : reject(new Error("Não foi possível gerar o PNG."))), "image/png", 1);
+          exportCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Não foi possível gerar o PNG."))), "image/png", 1);
         });
         const file = new File([blob], filename, { type: "image/png" });
         const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -1415,7 +1488,9 @@ export default function HalftoneStudio() {
       <div className="app">
         <aside id="sidePanel" className="side">
           <div className="brand">
-            <div className="logo">HT</div>
+            <div className="logo">
+              <img src="/assets/logo.png" alt="Halftone Studio" />
+            </div>
             <div>
               <h1>Halftone Studio</h1>
               <div className="sub">crie halftone pronto para DTF em poucos cliques</div>
