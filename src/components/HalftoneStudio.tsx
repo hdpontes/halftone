@@ -10,6 +10,32 @@ import "../app/halftone-studio.css";
  */
 type ScreenShape = "round" | "diamond" | "square" | "ellipse" | "line" | "rosette";
 
+type HalftonePreset = {
+  mode: "dark" | "color" | "light";
+  screenType: ScreenShape;
+  mixEnabled: boolean;
+  mixScreenType: ScreenShape;
+  mixAmount: number;
+  lpi: number;
+  screenAngle: number;
+  blackPoint: number;
+  whitePoint: number;
+  gamma: number;
+  gain: number;
+  removePower: number;
+  bgPower: number;
+  colorResidual: number;
+  saturation: number;
+  contrast: number;
+  protectTol: number;
+  colorTol: number;
+  dpi: number;
+  fillFrame: boolean;
+  removeHalo: boolean;
+};
+
+const PRESET_STORAGE_KEY = "hop_presets_v1";
+
 export default function HalftoneStudio() {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -1337,6 +1363,141 @@ export default function HalftoneStudio() {
       process();
     }
 
+    function collectPreset(): HalftonePreset {
+      return {
+        mode,
+        screenType,
+        mixEnabled,
+        mixScreenType,
+        mixAmount,
+        lpi: Number(($("lpi") as HTMLInputElement).value),
+        screenAngle: Number(($("screenAngle") as HTMLInputElement).value),
+        blackPoint: Number(($("blackPoint") as HTMLInputElement).value),
+        whitePoint: Number(($("whitePoint") as HTMLInputElement).value),
+        gamma: Number(($("gamma") as HTMLInputElement).value),
+        gain: Number(($("gain") as HTMLInputElement).value),
+        removePower: Number(($("removePower") as HTMLInputElement).value),
+        bgPower: Number(($("bgPower") as HTMLInputElement).value),
+        colorResidual: Number(($("colorResidual") as HTMLInputElement).value),
+        saturation: Number(($("saturation") as HTMLInputElement).value),
+        contrast: Number(($("contrast") as HTMLInputElement).value),
+        protectTol: Number(($("protectTol") as HTMLInputElement).value),
+        colorTol: Number(($("colorTol") as HTMLInputElement).value),
+        dpi,
+        fillFrame,
+        removeHalo,
+      };
+    }
+    function applyPreset(p: HalftonePreset) {
+      mode = p.mode;
+      container.querySelectorAll<HTMLButtonElement>(".mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === p.mode));
+      screenType = p.screenType;
+      container.querySelectorAll<HTMLButtonElement>("#screenChips .chip").forEach((b) => b.classList.toggle("active", b.dataset.screen === p.screenType));
+      mixScreenType = p.mixScreenType;
+      container.querySelectorAll<HTMLButtonElement>("#screenChips2 .chip").forEach((b) => b.classList.toggle("active", b.dataset.screen === p.mixScreenType));
+      mixEnabled = p.mixEnabled;
+      $("mixToggle").textContent = "Mesclar retículas: " + (mixEnabled ? "Ativado" : "Desativado");
+      $("mixToggle").classList.toggle("hot", mixEnabled);
+      $("mixWrap").style.display = mixEnabled ? "block" : "none";
+      mixAmount = p.mixAmount;
+      ($("mixAmount") as HTMLInputElement).value = String(p.mixAmount);
+      ($("lpi") as HTMLInputElement).value = String(p.lpi);
+      ($("screenAngle") as HTMLInputElement).value = String(p.screenAngle);
+      ($("blackPoint") as HTMLInputElement).value = String(p.blackPoint);
+      ($("whitePoint") as HTMLInputElement).value = String(p.whitePoint);
+      ($("gamma") as HTMLInputElement).value = String(p.gamma);
+      ($("gain") as HTMLInputElement).value = String(p.gain);
+      ($("removePower") as HTMLInputElement).value = String(p.removePower);
+      ($("bgPower") as HTMLInputElement).value = String(p.bgPower);
+      ($("colorResidual") as HTMLInputElement).value = String(p.colorResidual);
+      ($("saturation") as HTMLInputElement).value = String(p.saturation);
+      ($("contrast") as HTMLInputElement).value = String(p.contrast);
+      ($("protectTol") as HTMLInputElement).value = String(p.protectTol);
+      ($("colorTol") as HTMLInputElement).value = String(p.colorTol);
+      const beforePx = img ? getCustomPx() : null;
+      container.querySelectorAll<HTMLButtonElement>("#dpiChips .chip").forEach((b) => b.classList.toggle("active", Number(b.dataset.dpi) === p.dpi));
+      dpi = p.dpi;
+      if (img && beforePx) setCustomInputsFromPx(beforePx[0], beforePx[1]);
+      fillFrame = p.fillFrame;
+      ($("fillFrame") as HTMLInputElement).checked = p.fillFrame;
+      removeHalo = p.removeHalo;
+      ($("removeHalo") as HTMLInputElement).checked = p.removeHalo;
+      if (mode === "color" && !manualBgColor) detectBorderColor(false);
+      updateFileMeta();
+      labels();
+      process();
+    }
+    function loadPresets(): Record<string, HalftonePreset> {
+      try {
+        return JSON.parse(window.localStorage.getItem(PRESET_STORAGE_KEY) || "{}");
+      } catch {
+        return {};
+      }
+    }
+    function savePresetsMap(presets: Record<string, HalftonePreset>) {
+      window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(presets));
+    }
+    function refreshPresetSelect() {
+      const select = $<HTMLSelectElement>("presetSelect");
+      const presets = loadPresets();
+      const names = Object.keys(presets).sort((a, b) => a.localeCompare(b));
+      const current = select.value;
+      select.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = names.length ? "Selecione um preset" : "Nenhum preset salvo";
+      select.appendChild(placeholder);
+      names.forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+      if (names.includes(current)) select.value = current;
+    }
+    refreshPresetSelect();
+    $("savePresetBtn").addEventListener("click", () => {
+      const nameInput = $<HTMLInputElement>("presetName");
+      const name = nameInput.value.trim();
+      if (!name) {
+        setStatus("Digite um nome para salvar o preset.");
+        return;
+      }
+      const presets = loadPresets();
+      presets[name] = collectPreset();
+      savePresetsMap(presets);
+      refreshPresetSelect();
+      ($("presetSelect") as HTMLSelectElement).value = name;
+      nameInput.value = "";
+      setStatus(`Preset "${name}" salvo.`);
+    });
+    $("applyPresetBtn").addEventListener("click", () => {
+      const name = ($("presetSelect") as HTMLSelectElement).value;
+      if (!name) {
+        setStatus("Selecione um preset para aplicar.");
+        return;
+      }
+      const presets = loadPresets();
+      const preset = presets[name];
+      if (!preset) return;
+      applyPreset(preset);
+      setStatus(`Preset "${name}" aplicado.`);
+    });
+    $("deletePresetBtn").addEventListener("click", () => {
+      const select = $<HTMLSelectElement>("presetSelect");
+      const name = select.value;
+      if (!name) {
+        setStatus("Selecione um preset para excluir.");
+        return;
+      }
+      if (!window.confirm(`Excluir o preset "${name}"?`)) return;
+      const presets = loadPresets();
+      delete presets[name];
+      savePresetsMap(presets);
+      refreshPresetSelect();
+      setStatus(`Preset "${name}" excluído.`);
+    });
+
     $("customWidth").addEventListener("input", syncWidth);
     $("customHeight").addEventListener("input", syncHeight);
     $("customWidth").addEventListener("change", syncWidth);
@@ -1670,6 +1831,34 @@ export default function HalftoneStudio() {
           <div className="filebox">
             <b id="fileName">Nenhuma imagem carregada</b>
             <span id="fileMeta">Carregue uma imagem para começar.</span>
+          </div>
+
+          <div className="section">
+            <div className="sectionTitle">Presets</div>
+            <div className="dica">
+              <b>Dica:</b> salve as configurações atuais com um nome e aplique depois em qualquer outra imagem.
+            </div>
+            <div className="customField">
+              <label>Nome do preset</label>
+              <input id="presetName" type="text" placeholder="Ex: Camiseta preta 300dpi" />
+            </div>
+            <button id="savePresetBtn" className="smallBtn" type="button" style={{ width: "100%", marginTop: 8 }}>
+              Salvar preset atual
+            </button>
+            <div className="customField" style={{ marginTop: 10 }}>
+              <label>Presets salvos</label>
+              <select id="presetSelect" className="unitSelect">
+                <option value="">Nenhum preset salvo</option>
+              </select>
+            </div>
+            <div className="protectTop" style={{ marginTop: 8 }}>
+              <button id="applyPresetBtn" className="smallBtn" type="button" style={{ flex: 1 }}>
+                Aplicar preset
+              </button>
+              <button id="deletePresetBtn" className="smallBtn warn" type="button" style={{ flex: 1 }}>
+                Excluir preset
+              </button>
+            </div>
           </div>
 
           <div className="section">
