@@ -54,12 +54,8 @@
   right:-180px;bottom:-180px;border:70px solid rgba(130,23,255,.12);
   box-shadow:0 0 90px rgba(130,23,255,.22);
 }
-.login-studio .ls-logo{
-  display:inline-flex;align-items:center;gap:11px;font-weight:1000;font-size:22px;letter-spacing:-.02em;
-}
-.login-studio .ls-logo .mark{
-  width:46px;height:46px;border-radius:14px;background:#000;display:grid;place-items:center;
-  color:var(--ls-green);border:1px solid rgba(255,255,255,.12);box-shadow:0 0 28px rgba(185,255,0,.25);
+.login-studio .ls-logo-img{
+  display:block;height:46px;width:auto;max-width:220px;object-fit:contain;
 }
 .login-studio .tag{
   display:inline-flex;align-items:center;gap:9px;width:max-content;padding:9px 13px;margin-top:34px;
