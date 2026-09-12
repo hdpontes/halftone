@@ -902,6 +902,37 @@ export default function HalftoneStudio() {
       }
       bctx.putImageData(imgd, 0, 0);
     }
+    function crc32(buf: Uint8Array) {
+      let crc = 0xffffffff;
+      for (let i = 0; i < buf.length; i++) {
+        crc ^= buf[i];
+        for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+      }
+      return (crc ^ 0xffffffff) >>> 0;
+    }
+    async function embedPngDpi(blob: Blob, dpiValue: number): Promise<Blob> {
+      // Canvas-exported PNGs carry no resolution metadata, so other apps assume a default DPI
+      // (72/96) and show the wrong physical size; embed a pHYs chunk with the real DPI.
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const ihdrEnd = 8 + 4 + 4 + 13 + 4;
+      const pixelsPerMeter = Math.round(dpiValue / 0.0254);
+      const chunkBody = new Uint8Array(13);
+      chunkBody.set([0x70, 0x48, 0x59, 0x73], 0);
+      const bodyView = new DataView(chunkBody.buffer);
+      bodyView.setUint32(4, pixelsPerMeter);
+      bodyView.setUint32(8, pixelsPerMeter);
+      chunkBody[12] = 1;
+      const chunk = new Uint8Array(4 + chunkBody.length + 4);
+      const chunkView = new DataView(chunk.buffer);
+      chunkView.setUint32(0, 9);
+      chunk.set(chunkBody, 4);
+      chunkView.setUint32(4 + chunkBody.length, crc32(chunkBody));
+      const out = new Uint8Array(bytes.length + chunk.length);
+      out.set(bytes.subarray(0, ihdrEnd), 0);
+      out.set(chunk, ihdrEnd);
+      out.set(bytes.subarray(ihdrEnd), ihdrEnd + chunk.length);
+      return new Blob([out], { type: "image/png" });
+    }
     function cleanupResultResidualDust() {
       const power = Number(($("bgPower") as HTMLInputElement | null)?.value || 0);
       if (power < 90) return;
@@ -1178,9 +1209,10 @@ export default function HalftoneStudio() {
           exportCanvas = cropped;
         }
         binarizeAlpha(exportCanvas);
-        const blob = await new Promise<Blob>((resolve, reject) => {
+        let blob = await new Promise<Blob>((resolve, reject) => {
           exportCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Não foi possível gerar o PNG."))), "image/png", 1);
         });
+        blob = await embedPngDpi(blob, dpi);
         const file = new File([blob], filename, { type: "image/png" });
         const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
         const nav = navigator as Navigator & { canShare?: (data: { files: File[] }) => boolean; share?: (data: { files: File[]; title?: string; text?: string }) => Promise<void> };
