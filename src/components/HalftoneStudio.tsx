@@ -8,7 +8,7 @@ import "../app/halftone-studio.css";
  * meio-tom por pontos com ângulo, tamanhos/DPI, zoom/pan e exportação em PNG).
  * Toda a geração de imagem roda no navegador via Canvas 2D.
  */
-type ScreenShape = "dot" | "line" | "square" | "diamond" | "cross";
+type ScreenShape = "round" | "diamond" | "square" | "ellipse" | "line" | "rosette";
 
 export default function HalftoneStudio() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -42,7 +42,6 @@ export default function HalftoneStudio() {
     let mode: "dark" | "color" | "light" = "dark";
     let sizePreset: "original" | "a4" | "a3" | "a2" | "custom" = "original";
     let dpi = 300;
-    let lpi = 30;
     let zoom = 1;
     let showBefore = false;
     let pickingProtect = false;
@@ -53,7 +52,7 @@ export default function HalftoneStudio() {
     let aspectRatio = 1;
     let protectedColors: { r: number; g: number; b: number }[] = [];
     let sampledBgColor = { r: 0, g: 0, b: 0 };
-    let screenType: ScreenShape = "dot";
+    let screenType: ScreenShape = "round";
     let mixEnabled = false;
     let mixScreenType: ScreenShape = "line";
     let mixAmount = 35;
@@ -136,6 +135,11 @@ export default function HalftoneStudio() {
       if (colorResidualVal) colorResidualVal.textContent = ($("colorResidual") as HTMLInputElement).value;
       $("satVal").textContent = ($("saturation") as HTMLInputElement).value + "%";
       $("contrastVal").textContent = ($("contrast") as HTMLInputElement).value;
+      $("lpiVal").textContent = ($("lpi") as HTMLInputElement).value;
+      $("angleVal").textContent = ($("screenAngle") as HTMLInputElement).value + "°";
+      $("blackPointVal").textContent = ($("blackPoint") as HTMLInputElement).value;
+      $("whitePointVal").textContent = ($("whitePoint") as HTMLInputElement).value;
+      $("gammaVal").textContent = Number(($("gamma") as HTMLInputElement).value).toFixed(1);
       const mixValEl = container.querySelector("#mixVal");
       if (mixValEl) mixValEl.textContent = ($("mixAmount") as HTMLInputElement).value;
       $("protectTolVal").textContent = ($("protectTol") as HTMLInputElement).value;
@@ -797,10 +801,13 @@ export default function HalftoneStudio() {
       }
       ctx.putImageData(imgd, 0, 0);
     }
-    function maskLum(v: number) {
-      const c = Number(($("contrast") as HTMLInputElement).value);
-      const factor = (259 * (c + 255)) / (255 * (259 - c));
-      return clamp(factor * (v - 128) + 128, 0, 255);
+    function applyLevels(v: number) {
+      const black = Number(($("blackPoint") as HTMLInputElement).value);
+      const white = Math.max(black + 1, Number(($("whitePoint") as HTMLInputElement).value));
+      const gammaVal = Math.max(0.1, Number(($("gamma") as HTMLInputElement).value));
+      let t = clamp((v - black) / (white - black), 0, 1);
+      t = Math.pow(t, 1 / gammaVal);
+      return t * 255;
     }
     function drawDot(ctx2: CanvasRenderingContext2D, px: number, py: number, radius: number) {
       if (radius <= 0) return;
@@ -816,7 +823,7 @@ export default function HalftoneStudio() {
     }
     function drawShape(ctx2: CanvasRenderingContext2D, shape: ScreenShape, px: number, py: number, radius: number, cellSize: number, rotAngle: number) {
       if (radius <= 0) return;
-      if (shape === "dot") {
+      if (shape === "round") {
         drawDot(ctx2, px, py, radius);
         return;
       }
@@ -827,14 +834,27 @@ export default function HalftoneStudio() {
         const side = radius * 1.772;
         if (shape === "diamond") ctx2.rotate(Math.PI / 4);
         ctx2.fillRect(-side / 2, -side / 2, side, side);
+      } else if (shape === "ellipse") {
+        const rx = radius * 1.35;
+        const ry = radius * 0.72;
+        ctx2.beginPath();
+        ctx2.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+        ctx2.fill();
       } else if (shape === "line") {
         const barHeight = Math.max(0.4, radius * 1.6);
         ctx2.fillRect(-cellSize / 2, -barHeight / 2, cellSize, barHeight);
-      } else if (shape === "cross") {
-        const arm = Math.max(0.5, radius * 1.3);
-        const thick = Math.max(0.35, radius * 0.62);
-        ctx2.fillRect(-arm, -thick / 2, arm * 2, thick);
-        ctx2.fillRect(-thick / 2, -arm, thick, arm * 2);
+      } else if (shape === "rosette") {
+        const sub = Math.max(0.3, radius * 0.5);
+        const spread = Math.min(cellSize * 0.28, radius * 0.9 + 0.6);
+        const offsetsDeg = [0, 45, 90, 135];
+        for (const deg of offsetsDeg) {
+          const rad = (deg * Math.PI) / 180;
+          const ox = Math.cos(rad) * spread;
+          const oy = Math.sin(rad) * spread;
+          ctx2.beginPath();
+          ctx2.arc(ox, oy, sub, 0, Math.PI * 2);
+          ctx2.fill();
+        }
       }
       ctx2.restore();
     }
@@ -855,6 +875,15 @@ export default function HalftoneStudio() {
         d[i + 3] = na;
       }
       hctx.putImageData(imgd, 0, 0);
+    }
+    function binarizeAlpha(canvas: HTMLCanvasElement, threshold = 128) {
+      const bctx = canvas.getContext("2d", { willReadFrequently: true })!;
+      const imgd = bctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imgd.data;
+      for (let i = 3; i < d.length; i += 4) {
+        d[i] = d[i] >= threshold ? 255 : 0;
+      }
+      bctx.putImageData(imgd, 0, 0);
     }
     function cleanupResultResidualDust() {
       const power = Number(($("bgPower") as HTMLInputElement | null)?.value || 0);
@@ -903,10 +932,12 @@ export default function HalftoneStudio() {
     function halftone() {
       const w = clean.width,
         h = clean.height;
-      const cell = Math.max(1.1, dpi / lpi);
+      const lpiVal = Number(($("lpi") as HTMLInputElement).value);
+      const cell = Math.max(1.1, dpi / lpiVal);
       const gain = Number(($("gain") as HTMLInputElement).value);
       const blackProtect = 0.92;
-      const angle = (22 * Math.PI) / 180;
+      const angleDeg = Number(($("screenAngle") as HTMLInputElement).value);
+      const angle = (angleDeg * Math.PI) / 180;
       const cos = Math.cos(angle),
         sin = Math.sin(angle),
         cx = w / 2,
@@ -948,7 +979,7 @@ export default function HalftoneStudio() {
           if (isProtected(r, g, b)) continue;
 
           const rawL = lum(r, g, b);
-          const L = maskLum(rawL);
+          const L = applyLevels(rawL);
           let amount = 1 - L / 255;
 
           if (mode === "color" || mode === "light") {
@@ -1055,7 +1086,8 @@ export default function HalftoneStudio() {
       fit();
       $("empty").style.display = "none";
       const u = currentUnit();
-      $("sizeInfo").textContent = `Saída: ${fmtUnit(pxToUnit(w, u, dpi), u)} × ${fmtUnit(pxToUnit(h, u, dpi), u)} • ${dpi} DPI • ${lpi} LPI`;
+      const lpiVal = Number(($("lpi") as HTMLInputElement).value);
+      $("sizeInfo").textContent = `Saída: ${fmtUnit(pxToUnit(w, u, dpi), u)} × ${fmtUnit(pxToUnit(h, u, dpi), u)} • ${dpi} DPI • ${lpiVal} LPI`;
       setStatus("Pronto. Sua arte foi processada com sucesso.");
       loading(false);
     }
@@ -1128,6 +1160,7 @@ export default function HalftoneStudio() {
           cropCtx.drawImage(result, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
           exportCanvas = cropped;
         }
+        binarizeAlpha(exportCanvas);
         const blob = await new Promise<Blob>((resolve, reject) => {
           exportCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Não foi possível gerar o PNG."))), "image/png", 1);
         });
@@ -1298,14 +1331,6 @@ export default function HalftoneStudio() {
         process();
       })
     );
-    container.querySelectorAll<HTMLButtonElement>("#lpiChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#lpiChips .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        lpi = Number(b.dataset.lpi);
-        process();
-      })
-    );
     container.querySelectorAll<HTMLButtonElement>("#screenChips .chip").forEach((b) =>
       b.addEventListener("click", () => {
         container.querySelectorAll("#screenChips .chip").forEach((x) => x.classList.remove("active"));
@@ -1334,7 +1359,7 @@ export default function HalftoneStudio() {
       labels();
     });
     $("mixAmount").addEventListener("change", process);
-    ["gain", "removePower", "bgPower", "colorResidual", "saturation", "contrast", "protectTol", "colorTol"].forEach((id) => {
+    ["gain", "removePower", "bgPower", "colorResidual", "saturation", "contrast", "protectTol", "colorTol", "lpi", "screenAngle", "blackPoint", "whitePoint", "gamma"].forEach((id) => {
       const el = container.querySelector<HTMLInputElement>("#" + id);
       if (!el) return;
       el.addEventListener("input", labels);
@@ -1657,49 +1682,50 @@ export default function HalftoneStudio() {
           </div>
 
           <div className="section">
-            <div className="sectionTitle">Tamanho do ponto</div>
+            <div className="row">
+              <label>Frequência (LPI)</label>
+              <span className="val" id="lpiVal">32</span>
+            </div>
+            <input id="lpi" type="range" min={10} max={85} defaultValue={32} step={1} />
             <div className="dica">
               <b>Dica:</b> valores menores deixam os pontos maiores. Valores maiores deixam o halftone mais fino.
             </div>
-            <div className="chips five" id="lpiChips">
-              <button className="chip active" data-lpi="30">
-                30
-              </button>
-              <button className="chip" data-lpi="35">
-                35
-              </button>
-              <button className="chip" data-lpi="40">
-                40
-              </button>
-              <button className="chip" data-lpi="45">
-                45
-              </button>
-              <button className="chip" data-lpi="50">
-                50
-              </button>
+          </div>
+
+          <div className="section">
+            <div className="row">
+              <label>Ângulo</label>
+              <span className="val" id="angleVal">22.5°</span>
+            </div>
+            <input id="screenAngle" type="range" min={0} max={90} defaultValue={22.5} step={0.5} />
+            <div className="dica">
+              <b>Dica:</b> gira a grade da retícula. 22,5° é o ângulo clássico usado na impressão.
             </div>
           </div>
 
           <div className="section">
             <div className="sectionTitle">Tipo de retícula</div>
             <div className="dica">
-              <b>Dica:</b> pontos é o padrão para DTF. Linhas, quadrados, losango e cruz dão um efeito gráfico diferente.
+              <b>Dica:</b> Round é o padrão para DTF. Diamond, Square, Elipse, Line e Rosette dão efeitos gráficos diferentes.
             </div>
-            <div className="chips five" id="screenChips">
-              <button className="chip active" data-screen="dot">
-                Pontos
-              </button>
-              <button className="chip" data-screen="line">
-                Linhas
-              </button>
-              <button className="chip" data-screen="square">
-                Quadrados
+            <div className="chips" id="screenChips">
+              <button className="chip active" data-screen="round">
+                Round (Photoshop)
               </button>
               <button className="chip" data-screen="diamond">
-                Losango
+                Diamond
               </button>
-              <button className="chip" data-screen="cross">
-                Cruz
+              <button className="chip" data-screen="square">
+                Square
+              </button>
+              <button className="chip" data-screen="ellipse">
+                Elipse
+              </button>
+              <button className="chip" data-screen="line">
+                Line
+              </button>
+              <button className="chip" data-screen="rosette">
+                Rosette (Photoshop)
               </button>
             </div>
             <div className="protectTop" style={{ marginTop: 10 }}>
@@ -1708,21 +1734,24 @@ export default function HalftoneStudio() {
               </button>
             </div>
             <div id="mixWrap" style={{ display: "none", marginTop: 10 }}>
-              <div className="chips five" id="screenChips2">
-                <button className="chip active" data-screen="line">
-                  Linhas
-                </button>
-                <button className="chip" data-screen="square">
-                  Quadrados
+              <div className="chips" id="screenChips2">
+                <button className="chip" data-screen="round">
+                  Round (Photoshop)
                 </button>
                 <button className="chip" data-screen="diamond">
-                  Losango
+                  Diamond
                 </button>
-                <button className="chip" data-screen="cross">
-                  Cruz
+                <button className="chip" data-screen="square">
+                  Square
                 </button>
-                <button className="chip" data-screen="dot">
-                  Pontos
+                <button className="chip" data-screen="ellipse">
+                  Elipse
+                </button>
+                <button className="chip active" data-screen="line">
+                  Line
+                </button>
+                <button className="chip" data-screen="rosette">
+                  Rosette (Photoshop)
                 </button>
               </div>
               <div className="row" style={{ marginTop: 10 }}>
@@ -1733,6 +1762,28 @@ export default function HalftoneStudio() {
               <div className="dica">
                 <b>Dica:</b> controla a proporção entre a retícula principal e a secundária, célula a célula.
               </div>
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="sectionTitle">Tons do halftone</div>
+            <div className="row">
+              <label>Ponto preto</label>
+              <span className="val" id="blackPointVal">16</span>
+            </div>
+            <input id="blackPoint" type="range" min={0} max={254} defaultValue={16} step={1} />
+            <div className="row" style={{ marginTop: 10 }}>
+              <label>Ponto branco</label>
+              <span className="val" id="whitePointVal">110</span>
+            </div>
+            <input id="whitePoint" type="range" min={1} max={255} defaultValue={110} step={1} />
+            <div className="row" style={{ marginTop: 10 }}>
+              <label>Gamma</label>
+              <span className="val" id="gammaVal">1.8</span>
+            </div>
+            <input id="gamma" type="range" min={0.1} max={3} defaultValue={1.8} step={0.1} />
+            <div className="dica">
+              <b>Dica:</b> ajusta como os tons da imagem viram pontos, do sombreado (preto) ao realce (branco), antes de aplicar o halftone.
             </div>
           </div>
 
