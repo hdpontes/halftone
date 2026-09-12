@@ -1,0 +1,90 @@
+.adm-root{
+  --bg:#07070c; --card:#151520; --card2:#20202d; --line:#36364d;
+  --text:#f6f3ff; --muted:#a9a2bd; --accent:#9b5cff; --accent2:#c6a6ff;
+  --hot:#ff7a2f; --ok:#b7ff3c; --danger:#ff365e;
+  min-height:100vh;
+  background:
+    radial-gradient(circle at 30% -15%,rgba(155,92,255,.34),transparent 38%),
+    radial-gradient(circle at 95% 0%,rgba(255,122,47,.14),transparent 34%),#07070c;
+  color:var(--text);font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;font-size:14px;
+}
+.adm-root *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+.adm-root button,.adm-root input,.adm-root select{font:inherit}
+.adm-root button{cursor:pointer;border:0}
+
+.adm-session-bar{
+  position:fixed;top:14px;right:14px;z-index:99999;
+  display:flex;align-items:center;gap:10px;padding:8px 9px 8px 13px;
+  border:1px solid rgba(255,255,255,.12);border-radius:14px;
+  background:rgba(8,8,13,.88);backdrop-filter:blur(14px);
+  box-shadow:0 14px 38px rgba(0,0,0,.32);
+}
+.adm-session-bar span{font-size:11px;font-weight:900;color:#d8d8e3;letter-spacing:.04em;text-transform:uppercase}
+.adm-session-bar b{color:var(--ok)}
+.adm-session-bar a{
+  height:32px;padding:0 12px;border:1px solid rgba(130,23,255,.38);border-radius:10px;
+  background:rgba(130,23,255,.16);color:#fff;font-weight:900;font-size:11px;
+  display:flex;align-items:center;text-decoration:none;text-transform:uppercase;
+}
+.adm-session-bar a:hover{background:rgba(130,23,255,.28)}
+
+.adm-app{max-width:1320px;margin:0 auto;display:grid;grid-template-columns:320px minmax(0,1fr);gap:12px;padding:20px;min-height:100vh}
+
+.adm-side{background:rgba(19,19,29,.94);border:1px solid var(--line);box-shadow:0 20px 70px rgba(0,0,0,.42);border-radius:18px;padding:16px;height:fit-content}
+.adm-brand{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+.adm-logo{width:46px;height:46px;border-radius:14px;background:#000;display:grid;place-items:center;box-shadow:0 0 28px rgba(155,92,255,.45);border:1px solid rgba(255,255,255,.12);font-weight:1000;color:var(--accent2)}
+.adm-side h1{margin:0;font-size:17px;line-height:1.05;letter-spacing:-.03em}
+.adm-sub{font-size:11px;color:var(--muted);margin-top:3px}
+.adm-back{display:block;color:var(--muted);font-size:11px;text-decoration:none;margin-bottom:14px}
+.adm-back:hover{color:var(--accent2)}
+
+.adm-section{border-top:1px solid rgba(255,255,255,.08);padding-top:13px;margin-top:13px}
+.adm-section-title{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent2);font-weight:1000;margin-bottom:12px}
+.adm-form{display:grid;gap:11px}
+.adm-form label{display:grid;gap:6px;font-size:11px;font-weight:950;color:var(--accent2)}
+.adm-form input,.adm-form select{height:38px;border-radius:10px;background:#1a1a27;border:1px solid rgba(255,255,255,.12);color:#fff;padding:0 10px;font-weight:700}
+.adm-form input:focus,.adm-form select:focus{outline:1px solid var(--accent)}
+.adm-primary{height:42px;border-radius:13px;font-weight:1000;background:var(--accent);color:#fff;margin-top:4px}
+.adm-primary:disabled{opacity:.6;cursor:not-allowed}
+.adm-message{border-radius:10px;padding:9px 11px;font-size:12px;font-weight:700}
+.adm-error{background:rgba(255,54,94,.14);color:#ff9fb4;border:1px solid rgba(255,54,94,.3)}
+.adm-success{background:rgba(183,255,60,.12);color:var(--ok);border:1px solid rgba(183,255,60,.3)}
+
+.adm-main{min-width:0}
+.adm-top{background:rgba(19,19,29,.94);border:1px solid var(--line);box-shadow:0 20px 70px rgba(0,0,0,.42);border-radius:18px;padding:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.adm-title{font-weight:1000;font-size:19px}
+.adm-status{font-size:12px;color:var(--muted);margin-top:3px}
+.adm-stats{display:flex;gap:8px;flex-wrap:wrap}
+.adm-stat{background:#232334;border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:8px 14px;font-size:11px;color:var(--muted);font-weight:800;text-align:center;min-width:74px}
+.adm-stat span{display:block;font-size:19px;color:#fff;font-weight:1000}
+.adm-stat-ok span{color:var(--ok)}
+.adm-stat-warn span{color:#ffcf5c}
+.adm-stat-danger span{color:var(--danger)}
+
+.adm-table{background:rgba(19,19,29,.94);border:1px solid var(--line);box-shadow:0 20px 70px rgba(0,0,0,.42);border-radius:18px;overflow:hidden}
+.adm-table-head,.adm-row{display:grid;grid-template-columns:2fr .9fr .9fr 1fr 1.4fr;gap:10px;align-items:center;padding:13px 16px}
+.adm-table-head{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:950;border-bottom:1px solid rgba(255,255,255,.08)}
+.adm-row{border-bottom:1px solid rgba(255,255,255,.06)}
+.adm-row:last-child{border-bottom:0}
+.adm-user-cell{display:grid;gap:2px;min-width:0}
+.adm-user-cell strong{font-size:13px}
+.adm-user-cell small{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adm-role{justify-self:start;font-size:10px;font-weight:950;text-transform:uppercase;padding:5px 9px;border-radius:999px;background:#242434;border:1px solid rgba(255,255,255,.12);color:var(--muted)}
+.adm-role-admin{color:var(--accent2);border-color:rgba(155,92,255,.4)}
+.adm-badge{justify-self:start;font-size:10px;font-weight:950;text-transform:uppercase;padding:5px 9px;border-radius:999px}
+.adm-badge-active{background:rgba(183,255,60,.14);color:var(--ok);border:1px solid rgba(183,255,60,.32)}
+.adm-badge-pending{background:rgba(255,207,92,.14);color:#ffcf5c;border:1px solid rgba(255,207,92,.32)}
+.adm-badge-suspended{background:rgba(255,54,94,.14);color:var(--danger);border:1px solid rgba(255,54,94,.32)}
+.adm-row time{color:var(--muted);font-size:12px}
+.adm-actions{display:flex;gap:7px;flex-wrap:wrap}
+.adm-smallBtn{height:32px;border-radius:9px;background:#29293a;color:#fff;border:1px solid rgba(255,255,255,.12);font-size:11px;font-weight:950;padding:0 11px}
+.adm-smallBtn:disabled{opacity:.5;cursor:not-allowed}
+.adm-smallBtn-danger{background:rgba(255,54,94,.14);border-color:rgba(255,54,94,.35);color:#ff9fb4}
+.adm-empty{padding:26px;text-align:center;color:var(--muted);font-size:13px}
+
+@media(max-width:920px){
+  .adm-app{grid-template-columns:1fr;padding:12px}
+  .adm-table-head{display:none}
+  .adm-row{grid-template-columns:1fr;gap:8px;padding:14px}
+  .adm-actions{justify-content:flex-start}
+}
