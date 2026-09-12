@@ -40,7 +40,6 @@ export default function HalftoneStudio() {
     let img: HTMLImageElement | null = null;
     let imgName = "arte.png";
     let mode: "dark" | "color" | "light" = "dark";
-    let sizePreset: "original" | "a4" | "a3" | "a2" | "custom" = "original";
     let dpi = 300;
     let zoom = 1;
     let showBefore = false;
@@ -56,8 +55,10 @@ export default function HalftoneStudio() {
     let mixEnabled = false;
     let mixScreenType: ScreenShape = "line";
     let mixAmount = 35;
+    let lockRatio = true;
+    let fillFrame = true;
+    let removeHalo = false;
 
-    const paper: Record<string, [number, number]> = { a4: [8.27, 11.69], a3: [11.69, 16.54], a2: [16.54, 23.39] };
     const maxSide = 9000;
 
     function unitName(u: string) {
@@ -151,29 +152,14 @@ export default function HalftoneStudio() {
       if (bgColorSwatch) bgColorSwatch.style.background = hex(sampledBgColor);
       $("zoomVal").textContent = Math.round(zoom * 100) + "%";
       $("zoomBadge").textContent = Math.round(zoom * 100) + "%";
-      $("customSizeBox").style.display = sizePreset === "custom" ? "block" : "none";
       const wrap = container.querySelector<HTMLElement>("#colorResidualWrap");
       if (wrap) wrap.style.display = mode === "color" ? "block" : "none";
     }
     function targetSize(): [number, number] {
       if (!img) return [0, 0];
-      const iw = img.naturalWidth,
-        ih = img.naturalHeight;
-      if (sizePreset === "original") return [iw, ih];
-      if (sizePreset === "custom") {
-        const u = currentUnit();
-        const w = Math.max(1, Math.round(unitToPx(($("customWidth") as HTMLInputElement).value, u, dpi)));
-        const h = Math.max(1, Math.round(unitToPx(($("customHeight") as HTMLInputElement).value, u, dpi)));
-        const cap = Math.min(1, maxSide / Math.max(w, h));
-        return [Math.round(w * cap), Math.round(h * cap)];
-      }
-      let [inchW, inchH] = paper[sizePreset];
-      if (ih < iw) [inchW, inchH] = [inchH, inchW];
-      const mw = inchW * dpi,
-        mh = inchH * dpi,
-        s = Math.min(mw / iw, mh / ih);
-      const w = Math.round(iw * s),
-        h = Math.round(ih * s);
+      const u = currentUnit();
+      const w = Math.max(1, Math.round(unitToPx(($("customWidth") as HTMLInputElement).value, u, dpi)));
+      const h = Math.max(1, Math.round(unitToPx(($("customHeight") as HTMLInputElement).value, u, dpi)));
       const cap = Math.min(1, maxSide / Math.max(w, h));
       return [Math.round(w * cap), Math.round(h * cap)];
     }
@@ -765,7 +751,38 @@ export default function HalftoneStudio() {
       cleanupColorEdgeSpill(imgd, bg);
       cleanupColorContaminationGlobal(imgd, bg);
       decontaminateColorBackground(imgd, bg);
+      if (removeHalo) removeBackgroundHalo(imgd, bg);
       cctx.putImageData(imgd, 0, 0);
+    }
+    function removeBackgroundHalo(imgd: ImageData, bg: { r: number; g: number; b: number }) {
+      const w = imgd.width,
+        h = imgd.height,
+        d = imgd.data;
+      const src = d.slice();
+      const tol = 46;
+      const dirs = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ];
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if (src[i + 3] === 0) continue;
+          let edge = false;
+          for (const [dx, dy] of dirs) {
+            const nx = x + dx,
+              ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h || src[(ny * w + nx) * 4 + 3] === 0) {
+              edge = true;
+              break;
+            }
+          }
+          if (!edge) continue;
+          if (src[i + 3] < 235 || dist(src[i], src[i + 1], src[i + 2], bg) < tol) d[i + 3] = 0;
+        }
+      }
     }
     function isProtected(r: number, g: number, b: number) {
       if (!protectEnabled || !protectedColors.length) return false;
@@ -1012,7 +1029,7 @@ export default function HalftoneStudio() {
       const srcFull = showBefore ? original : result;
       $("badge").textContent = showBefore ? "Antes / original" : "Depois / resultado";
       let src: HTMLCanvasElement = srcFull;
-      if (!showBefore && srcFull.width && srcFull.height) {
+      if (!showBefore && fillFrame && srcFull.width && srcFull.height) {
         const bounds = computeContentBounds(srcFull);
         if (bounds && (bounds.x > 0 || bounds.y > 0 || bounds.width !== srcFull.width || bounds.height !== srcFull.height)) {
           displayCrop.width = bounds.width;
@@ -1047,7 +1064,7 @@ export default function HalftoneStudio() {
       const v = $("viewer");
       const mobile = window.matchMedia("(max-width:920px)").matches;
       const safeSpace = mobile ? 40 : 92;
-      const bounds = computeContentBounds(result);
+      const bounds = fillFrame ? computeContentBounds(result) : null;
       const dispW = bounds ? bounds.width : result.width;
       const dispH = bounds ? bounds.height : result.height;
       const z = Math.min((v.clientWidth - safeSpace) / dispW, (v.clientHeight - safeSpace) / dispH, 1);
@@ -1149,7 +1166,7 @@ export default function HalftoneStudio() {
       setStatus("Preparando arquivo para download...");
       const filename = imgName.replace(/\.(png|jpg|jpeg|webp)$/i, "") + `-halftone-dtf-${mode}.png`;
       try {
-        const bounds = computeContentBounds(result);
+        const bounds = fillFrame ? computeContentBounds(result) : null;
         let exportCanvas: HTMLCanvasElement = result;
         if (bounds && (bounds.x > 0 || bounds.y > 0 || bounds.width !== result.width || bounds.height !== result.height)) {
           const cropped = document.createElement("canvas");
@@ -1246,17 +1263,21 @@ export default function HalftoneStudio() {
     }
     function syncWidth() {
       if (!img) return;
-      const w = Math.max(1, parseFloat(($("customWidth") as HTMLInputElement).value) || 1);
-      ($("customHeight") as HTMLInputElement).value = currentUnit() === "px" ? String(Math.round(w / Math.max(aspectRatio, 0.0001))) : (w / Math.max(aspectRatio, 0.0001)).toFixed(2);
+      if (lockRatio) {
+        const w = Math.max(1, parseFloat(($("customWidth") as HTMLInputElement).value) || 1);
+        ($("customHeight") as HTMLInputElement).value = currentUnit() === "px" ? String(Math.round(w / Math.max(aspectRatio, 0.0001))) : (w / Math.max(aspectRatio, 0.0001)).toFixed(2);
+      }
       updateFileMeta();
-      if (sizePreset === "custom") process();
+      process();
     }
     function syncHeight() {
       if (!img) return;
-      const h = Math.max(1, parseFloat(($("customHeight") as HTMLInputElement).value) || 1);
-      ($("customWidth") as HTMLInputElement).value = currentUnit() === "px" ? String(Math.round(h * Math.max(aspectRatio, 0.0001))) : (h * Math.max(aspectRatio, 0.0001)).toFixed(2);
+      if (lockRatio) {
+        const h = Math.max(1, parseFloat(($("customHeight") as HTMLInputElement).value) || 1);
+        ($("customWidth") as HTMLInputElement).value = currentUnit() === "px" ? String(Math.round(h * Math.max(aspectRatio, 0.0001))) : (h * Math.max(aspectRatio, 0.0001)).toFixed(2);
+      }
       updateFileMeta();
-      if (sizePreset === "custom") process();
+      process();
     }
     function changeUnit() {
       if (!img) {
@@ -1267,7 +1288,21 @@ export default function HalftoneStudio() {
       setCustomInputsFromPx(wPx, hPx);
       updateFileMeta();
       labels();
-      if (sizePreset === "custom") process();
+      process();
+    }
+    function setQuickHeightCm(cm: number) {
+      if (!img) return;
+      const hPx = unitToPx(cm, "cm", dpi);
+      const wPx = lockRatio ? hPx * aspectRatio : getCustomPx()[0];
+      setCustomInputsFromPx(wPx, hPx);
+      updateFileMeta();
+      process();
+    }
+    function restoreOriginalSize() {
+      if (!img) return;
+      setCustomInputsFromPx(img.naturalWidth, img.naturalHeight);
+      updateFileMeta();
+      process();
     }
 
     $("customWidth").addEventListener("input", syncWidth);
@@ -1311,15 +1346,22 @@ export default function HalftoneStudio() {
         process();
       })
     );
-    container.querySelectorAll<HTMLButtonElement>("#sizeChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#sizeChips .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        sizePreset = b.dataset.size as typeof sizePreset;
-        labels();
-        process();
-      })
+    container.querySelectorAll<HTMLButtonElement>("#quickHeightChips .chip").forEach((b) =>
+      b.addEventListener("click", () => setQuickHeightCm(Number(b.dataset.heightCm)))
     );
+    $("restoreSizeBtn").addEventListener("click", restoreOriginalSize);
+    $("lockRatio").addEventListener("change", () => {
+      lockRatio = ($("lockRatio") as HTMLInputElement).checked;
+    });
+    $("fillFrame").addEventListener("change", () => {
+      fillFrame = ($("fillFrame") as HTMLInputElement).checked;
+      render();
+      fit();
+    });
+    $("removeHalo").addEventListener("change", () => {
+      removeHalo = ($("removeHalo") as HTMLInputElement).checked;
+      process();
+    });
     container.querySelectorAll<HTMLButtonElement>("#dpiChips .chip").forEach((b) =>
       b.addEventListener("click", () => {
         const beforePx = img ? getCustomPx() : null;
@@ -1614,28 +1656,18 @@ export default function HalftoneStudio() {
             <div className="dica">
               <b>Dica:</b> escolha o fundo mais parecido com a imagem para a limpeza ficar mais precisa.
             </div>
+            <label className="checkRow">
+              <input id="removeHalo" type="checkbox" />
+              Remover halo da cor do fundo
+            </label>
+            <div className="dica">
+              <b>Dica:</b> ativa uma limpeza extra na borda do recorte para tirar aquele contorno fino da cor do fundo que às vezes sobra.
+            </div>
           </div>
 
           <div className="section">
             <div className="sectionTitle">Tamanho da arte</div>
-            <div className="chips" id="sizeChips">
-              <button className="chip active" data-size="original" title="Mantém o tamanho original da imagem.">
-                Original
-              </button>
-              <button className="chip" data-size="a4" title="Ajusta a arte proporcionalmente dentro do tamanho A4.">
-                A4
-              </button>
-              <button className="chip" data-size="a3" title="Ajusta a arte proporcionalmente dentro do tamanho A3.">
-                A3
-              </button>
-              <button className="chip" data-size="a2" title="Ajusta a arte proporcionalmente dentro do tamanho A2.">
-                A2
-              </button>
-              <button className="chip" data-size="custom" title="Escolha o tamanho da arte sem distorcer a imagem.">
-                Personalizado
-              </button>
-            </div>
-            <div id="customSizeBox" className="customSizeBox">
+            <div className="customSizeBox">
               <div className="unitRow">
                 <div className="customField">
                   <label>Unidade</label>
@@ -1657,8 +1689,33 @@ export default function HalftoneStudio() {
                   <input id="customHeight" type="number" min={1} step={0.1} defaultValue={20} />
                 </div>
               </div>
+              <label className="checkRow">
+                <input id="lockRatio" type="checkbox" defaultChecked />
+                Travar proporção
+              </label>
               <div className="miniText">
-                <b>Dica:</b> a proporção é automática. Mude só uma medida e a outra acompanha para não distorcer a arte.
+                <b>Dica:</b> largura e altura já vêm preenchidas com o tamanho do arquivo original. Com a proporção travada, mudar uma medida ajusta a outra automaticamente.
+              </div>
+              <div className="chips" id="quickHeightChips" style={{ marginTop: 10 }}>
+                <button className="chip" data-height-cm="56" title="Define a altura em 56cm e calcula a largura proporcional.">
+                  A2 · 56cm
+                </button>
+                <button className="chip" data-height-cm="40" title="Define a altura em 40cm e calcula a largura proporcional.">
+                  A3 · 40cm
+                </button>
+                <button className="chip" data-height-cm="28" title="Define a altura em 28cm e calcula a largura proporcional.">
+                  A4 · 28cm
+                </button>
+              </div>
+              <button id="restoreSizeBtn" className="smallBtn" type="button" style={{ marginTop: 10, width: "100%" }}>
+                Restaurar tamanho original
+              </button>
+              <label className="checkRow" style={{ marginTop: 10 }}>
+                <input id="fillFrame" type="checkbox" defaultChecked />
+                Preencher o quadro com a arte (sem sobra)
+              </label>
+              <div className="miniText">
+                <b>Dica:</b> corta as bordas transparentes da arte para preencher todo o quadro escolhido, sem sobra de fundo.
               </div>
             </div>
           </div>
