@@ -17,7 +17,7 @@ export default function LoginPage() {
     const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     if (response.ok) {
       setSuccess(true);
-      window.location.href = "/dashboard";
+      window.location.href = "/halftone";
     } else {
       setError((await response.json()).error || "Não foi possível entrar.");
       setLoading(false);
