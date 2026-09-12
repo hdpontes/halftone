@@ -30,7 +30,7 @@ export default function LoginPage() {
       <main className="ls-shell">
         <section className="ls-showcase">
           <div>
-            <div className="ls-logo"><span className="mark">HT</span> Halftone Online Pro</div>
+            <img className="ls-logo-img" src="/assets/logo.png" alt="Halftone Online Pro" />
             <div className="tag">Área exclusiva de acesso</div>
             <h1>Halftone profissional direto no navegador.</h1>
             <p className="lead">Entre com seus dados e crie halftones para fundo escuro, colorido ou claro direto no navegador, sem instalar programas.</p>
