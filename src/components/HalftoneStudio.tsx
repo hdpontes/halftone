@@ -1408,6 +1408,10 @@ export default function HalftoneStudio() {
 
   return (
     <div className="hop-root" ref={rootRef}>
+      <div className="hop-session-bar" aria-label="Sessão de acesso">
+        <span>Acesso <b>liberado</b></span>
+        <a href="/api/auth/logout">SAIR</a>
+      </div>
       <div className="app">
         <aside id="sidePanel" className="side">
           <div className="brand">
