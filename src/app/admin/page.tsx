@@ -1,5 +1,19 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import AdminStudio from "@/components/AdminStudio";
 
-export default async function AdminPage() { const session = await getSession(); if (!session || session.role !== "ADMIN") redirect("/halftone"); const users = await prisma.user.findMany({ orderBy: { createdAt: "desc" }, take: 50 }); return <main className="app-shell"><nav className="topbar"><div className="brand-mark">H<span>.</span></div><a href="/halftone" className="back-link">← Voltar à ferramenta</a></nav><section className="dashboard-content admin-content"><p className="eyebrow muted">ADMIN / CONTROLE DE ACESSO</p><div className="welcome"><div><h1>Usuários.</h1><p>Gerencie os acessos liberados pela Hotmart.</p></div><span className="count-badge">{users.length} cadastrados</span></div><div className="user-table"><div className="table-head"><span>USUÁRIO</span><span>STATUS</span><span>CADASTRO</span></div>{users.map((user) => <div className="table-row" key={user.id}><div><strong>{user.name}</strong><small>{user.email}</small></div><span className={`table-status ${user.accessStatus.toLowerCase()}`}>{user.accessStatus}</span><time>{user.createdAt.toLocaleDateString("pt-BR")}</time><form action={`/api/admin/users/${user.id}`} method="POST"><input type="hidden" name="status" value={user.accessStatus === "ACTIVE" ? "SUSPENDED" : "ACTIVE"} /><button type="submit">{user.accessStatus === "ACTIVE" ? "Suspender" : "Ativar"}</button></form></div>)}</div></section></main>; }
+export default async function AdminPage() {
+  const session = await getSession();
+  if (!session || session.role !== "ADMIN") redirect("/halftone");
+  const users = await prisma.user.findMany({ orderBy: { createdAt: "desc" }, take: 200 });
+  const plainUsers = users.map((user) => ({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    accessStatus: user.accessStatus,
+    createdAt: user.createdAt.toISOString(),
+  }));
+  return <AdminStudio initialUsers={plainUsers} currentUserId={session.id} />;
+}
