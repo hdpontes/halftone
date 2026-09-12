@@ -30,7 +30,6 @@ export default function HalftoneStudio() {
     const mctx = mask.getContext("2d", { willReadFrequently: true })!;
     [vctx, octx, cctx, pctx, rctx, mctx].forEach((c) => {
       c.imageSmoothingEnabled = false;
-      // @ts-expect-error vendor
       c.imageSmoothingQuality = "low";
     });
 
@@ -171,7 +170,6 @@ export default function HalftoneStudio() {
       });
       [vctx, octx, cctx, pctx, rctx, mctx].forEach((c) => {
         c.imageSmoothingEnabled = false;
-        // @ts-expect-error vendor
         c.imageSmoothingQuality = "low";
       });
     }
@@ -991,7 +989,6 @@ export default function HalftoneStudio() {
       const [w, h] = targetSize();
       setCanv(w, h);
       octx.imageSmoothingEnabled = true;
-      // @ts-expect-error vendor
       octx.imageSmoothingQuality = "high";
       octx.clearRect(0, 0, w, h);
       octx.drawImage(img, 0, 0, w, h);
