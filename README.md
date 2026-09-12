@@ -37,4 +37,4 @@ O checkout exibido na tela de login é definido por `NEXT_PUBLIC_HOTMART_CHECKOU
 
 ## Halftone Studio
 
-Usuários com `accessStatus=ACTIVE` acessam `/halftone` pelo painel. O preview aplica a retícula no Canvas assim que a imagem é importada; a exportação envia a arte para `POST /api/halftone`, que processa PNG, JPG, WEBP ou TIFF com ImageMagick e retorna um PNG para produção. Os parâmetros aceitos são `mode` (`mono` ou `cmyk`), `lpi` (10-120), `angle` (-90 a 90), `dpi` (150-600), `dot` (`round`, `ellipse` ou `line`), `contrast`, `brightness` e `transparent`.
+Usuários com `accessStatus=ACTIVE` acessam `/halftone` pelo painel. O preview aplica a retícula no Canvas assim que a imagem é importada; a exportação envia a arte para `POST /api/halftone`, que processa PNG, JPG, WEBP ou TIFF com ImageMagick e retorna um PNG de produção em 300 DPI. Os parâmetros aceitos são `mode` (`mono` ou `cmyk`), `lpi` (10-120), `angle` (-90 a 90), `dpi` (fixo em 300), `dot` (`round`, `ellipse` ou `line`), `contrast`, `brightness` e `transparent`.

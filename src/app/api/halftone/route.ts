@@ -15,11 +15,11 @@ const settingsSchema = z.object({
   mode: z.enum(["mono", "cmyk"]).default("mono"),
   lpi: z.coerce.number().int().min(10).max(120).default(45),
   angle: z.coerce.number().min(-90).max(90).default(45),
-  dpi: z.coerce.number().int().min(150).max(600).default(300),
+  dpi: z.coerce.number().int().refine((value) => value === 300, "A saída DTF deve ser 300 DPI").default(300),
   dot: z.enum(["round", "ellipse", "line"]).default("round"),
   contrast: z.coerce.number().min(-40).max(40).default(0),
   brightness: z.coerce.number().min(-40).max(40).default(0),
-  transparent: z.coerce.boolean().default(true)
+  transparent: z.preprocess((value) => value === "true" || value === true, z.boolean()).default(true)
 });
 
 const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/tiff"]);

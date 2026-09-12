@@ -1,0 +1,120 @@
+.login-studio{
+  --ls-bg:#06060a;
+  --ls-panel:#11111a;
+  --ls-text:#f8f8fb;
+  --ls-muted:#9b9bab;
+  --ls-line:rgba(255,255,255,.09);
+  --ls-green:#b9ff00;
+  --ls-purple:#8217ff;
+  --ls-shadow:0 30px 90px rgba(0,0,0,.55);
+  min-height:100vh;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--ls-text);
+  background:
+    radial-gradient(circle at 8% 10%,rgba(130,23,255,.22),transparent 30%),
+    radial-gradient(circle at 92% 86%,rgba(185,255,0,.10),transparent 26%),
+    linear-gradient(135deg,#050508 0%,#0b0b12 48%,#060609 100%);
+  display:grid;
+  place-items:center;
+  padding:28px;
+  overflow-x:hidden;
+  position:relative;
+}
+.login-studio *{box-sizing:border-box}
+.login-studio::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background-image:radial-gradient(rgba(255,255,255,.09) 1px,transparent 1px);
+  background-size:28px 28px;
+  mask-image:linear-gradient(to bottom,black,transparent 75%);
+  opacity:.22;
+}
+.login-studio .back-link{
+  position:fixed;left:20px;top:18px;z-index:50;color:#d7d7df;
+  font:800 12px/1 Inter,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;
+  padding:12px 14px;border:1px solid rgba(255,255,255,.1);border-radius:12px;
+  background:rgba(8,8,13,.72);backdrop-filter:blur(12px);text-decoration:none;
+}
+.login-studio .ls-shell{
+  position:relative;z-index:1;width:min(1120px,100%);min-height:650px;
+  display:grid;grid-template-columns:1.1fr .9fr;border:1px solid var(--ls-line);
+  border-radius:30px;overflow:hidden;background:rgba(10,10,16,.82);
+  box-shadow:var(--ls-shadow);backdrop-filter:blur(24px);
+}
+.login-studio .ls-showcase{
+  position:relative;padding:54px;display:flex;flex-direction:column;justify-content:space-between;
+  background:radial-gradient(circle at 20% 10%,rgba(185,255,0,.12),transparent 34%),
+    linear-gradient(155deg,rgba(255,255,255,.025),rgba(130,23,255,.10));
+  border-right:1px solid var(--ls-line);overflow:hidden;
+}
+.login-studio .ls-showcase::after{
+  content:"";position:absolute;width:380px;height:380px;border-radius:50%;
+  right:-180px;bottom:-180px;border:70px solid rgba(130,23,255,.12);
+  box-shadow:0 0 90px rgba(130,23,255,.22);
+}
+.login-studio .ls-logo{
+  display:inline-flex;align-items:center;gap:11px;font-weight:1000;font-size:22px;letter-spacing:-.02em;
+}
+.login-studio .ls-logo .mark{
+  width:46px;height:46px;border-radius:14px;background:#000;display:grid;place-items:center;
+  color:var(--ls-green);border:1px solid rgba(255,255,255,.12);box-shadow:0 0 28px rgba(185,255,0,.25);
+}
+.login-studio .tag{
+  display:inline-flex;align-items:center;gap:9px;width:max-content;padding:9px 13px;margin-top:34px;
+  border:1px solid rgba(185,255,0,.25);border-radius:999px;background:rgba(185,255,0,.07);
+  color:var(--ls-green);font-size:12px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;
+}
+.login-studio .tag::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ls-green);box-shadow:0 0 16px var(--ls-green)}
+.login-studio h1{margin:22px 0 0;font-size:clamp(38px,5vw,68px);line-height:.94;letter-spacing:-.055em}
+.login-studio .lead{max-width:600px;margin:22px 0 0;color:#c7c7d2;font-size:17px;line-height:1.7}
+.login-studio .benefits{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:30px}
+.login-studio .benefit{padding:14px 16px;border:1px solid var(--ls-line);border-radius:15px;background:rgba(255,255,255,.025);font-size:13px;font-weight:800}
+.login-studio .benefit b{color:var(--ls-green)}
+.login-studio .small-note{position:relative;z-index:2;margin-top:38px;color:var(--ls-muted);font-size:12px}
+.login-studio .ls-login-side{padding:54px;display:flex;align-items:center;background:linear-gradient(180deg,rgba(255,255,255,.016),rgba(255,255,255,0))}
+.login-studio .ls-login-card{width:100%}
+.login-studio .ls-login-card h2{margin:0;font-size:30px;letter-spacing:-.035em}
+.login-studio .ls-login-card>p{margin:10px 0 30px;color:var(--ls-muted);line-height:1.6}
+.login-studio .field{margin-bottom:17px}
+.login-studio label{display:block;margin:0 0 8px;font-size:12px;font-weight:900;color:#d8d8e1;letter-spacing:.05em;text-transform:uppercase}
+.login-studio .input-wrap{position:relative}
+.login-studio input{
+  width:100%;height:56px;padding:0 16px;border:1px solid var(--ls-line);border-radius:15px;
+  background:#0b0b12;color:#fff;font-size:16px;outline:none;transition:.18s ease;
+}
+.login-studio input:focus{border-color:rgba(185,255,0,.65);box-shadow:0 0 0 4px rgba(185,255,0,.08)}
+.login-studio .toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#bdbdcc;font-weight:800;cursor:pointer;padding:9px;border-radius:10px}
+.login-studio .toggle:hover{background:rgba(255,255,255,.05)}
+.login-studio .submit{
+  width:100%;height:58px;border:0;border-radius:16px;margin-top:7px;cursor:pointer;
+  color:#08080b;background:linear-gradient(135deg,var(--ls-green),#d9ff63);font-size:15px;font-weight:1000;letter-spacing:.02em;
+  box-shadow:0 16px 38px rgba(185,255,0,.16);transition:.18s ease;
+}
+.login-studio .submit:hover{transform:translateY(-2px);box-shadow:0 20px 44px rgba(185,255,0,.22)}
+.login-studio .submit:active{transform:translateY(0)}
+.login-studio .submit[disabled]{opacity:.65;cursor:wait;transform:none}
+.login-studio .message{margin-top:15px;padding:13px 14px;border-radius:13px;font-size:13px;font-weight:800}
+.login-studio .message.error{color:#ffd9e1;background:rgba(255,92,121,.10);border:1px solid rgba(255,92,121,.25)}
+.login-studio .message.success{color:#eaffb0;background:rgba(185,255,0,.08);border:1px solid rgba(185,255,0,.22)}
+.login-studio .secure-note{display:flex;gap:10px;align-items:flex-start;margin-top:24px;padding-top:22px;border-top:1px solid var(--ls-line);color:var(--ls-muted);font-size:12px;line-height:1.55}
+.login-studio .secure-note span:first-child{color:var(--ls-green);font-size:18px;line-height:1}
+.login-studio .ls-signup{
+  display:block;text-align:center;margin-top:14px;padding:14px 16px;border-radius:15px;
+  border:1px solid var(--ls-line);color:var(--ls-text);text-decoration:none;font-weight:900;font-size:13px;
+}
+.login-studio .ls-signup:hover{border-color:rgba(185,255,0,.35);color:var(--ls-green)}
+@media(max-width:860px){
+  .login-studio{padding:14px}
+  .login-studio .ls-shell{grid-template-columns:1fr;min-height:auto}
+  .login-studio .ls-showcase{padding:30px;border-right:0;border-bottom:1px solid var(--ls-line)}
+  .login-studio .ls-login-side{padding:30px}
+  .login-studio h1{font-size:43px}
+}
+@media(max-width:520px){
+  .login-studio .benefits{grid-template-columns:1fr}
+  .login-studio .ls-showcase,.login-studio .ls-login-side{padding:24px}
+  .login-studio .ls-shell{border-radius:22px}
+  .login-studio h1{font-size:37px}
+}
