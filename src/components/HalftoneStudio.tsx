@@ -8,6 +8,8 @@ import "../app/halftone-studio.css";
  * meio-tom por pontos com ângulo, tamanhos/DPI, zoom/pan e exportação em PNG).
  * Toda a geração de imagem roda no navegador via Canvas 2D.
  */
+type ScreenShape = "dot" | "line" | "square" | "diamond" | "cross";
+
 export default function HalftoneStudio() {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -51,6 +53,10 @@ export default function HalftoneStudio() {
     let aspectRatio = 1;
     let protectedColors: { r: number; g: number; b: number }[] = [];
     let sampledBgColor = { r: 0, g: 0, b: 0 };
+    let screenType: ScreenShape = "dot";
+    let mixEnabled = false;
+    let mixScreenType: ScreenShape = "line";
+    let mixAmount = 35;
 
     const paper: Record<string, [number, number]> = { a4: [8.27, 11.69], a3: [11.69, 16.54], a2: [16.54, 23.39] };
     const maxSide = 9000;
@@ -130,6 +136,8 @@ export default function HalftoneStudio() {
       if (colorResidualVal) colorResidualVal.textContent = ($("colorResidual") as HTMLInputElement).value;
       $("satVal").textContent = ($("saturation") as HTMLInputElement).value + "%";
       $("contrastVal").textContent = ($("contrast") as HTMLInputElement).value;
+      const mixValEl = container.querySelector("#mixVal");
+      if (mixValEl) mixValEl.textContent = ($("mixAmount") as HTMLInputElement).value;
       $("protectTolVal").textContent = ($("protectTol") as HTMLInputElement).value;
       const colorTolVal = container.querySelector("#colorTolVal");
       if (colorTolVal) colorTolVal.textContent = ($("colorTol") as HTMLInputElement).value;
@@ -800,6 +808,36 @@ export default function HalftoneStudio() {
       ctx2.arc(px, py, radius, 0, Math.PI * 2);
       ctx2.fill();
     }
+    function cellHash(x: number, y: number) {
+      let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
+      h = Math.imul(h ^ (h >>> 13), 1274126177);
+      h = h ^ (h >>> 16);
+      return (h >>> 0) / 4294967295;
+    }
+    function drawShape(ctx2: CanvasRenderingContext2D, shape: ScreenShape, px: number, py: number, radius: number, cellSize: number, rotAngle: number) {
+      if (radius <= 0) return;
+      if (shape === "dot") {
+        drawDot(ctx2, px, py, radius);
+        return;
+      }
+      ctx2.save();
+      ctx2.translate(px, py);
+      ctx2.rotate(rotAngle);
+      if (shape === "square" || shape === "diamond") {
+        const side = radius * 1.772;
+        if (shape === "diamond") ctx2.rotate(Math.PI / 4);
+        ctx2.fillRect(-side / 2, -side / 2, side, side);
+      } else if (shape === "line") {
+        const barHeight = Math.max(0.4, radius * 1.6);
+        ctx2.fillRect(-cellSize / 2, -barHeight / 2, cellSize, barHeight);
+      } else if (shape === "cross") {
+        const arm = Math.max(0.5, radius * 1.3);
+        const thick = Math.max(0.35, radius * 0.62);
+        ctx2.fillRect(-arm, -thick / 2, arm * 2, thick);
+        ctx2.fillRect(-thick / 2, -arm, thick, arm * 2);
+      }
+      ctx2.restore();
+    }
     function hardenAlpha(canvas: HTMLCanvasElement) {
       const hctx = canvas.getContext("2d", { willReadFrequently: true })!;
       const imgd = hctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -921,8 +959,9 @@ export default function HalftoneStudio() {
           const radius = cell * 0.56 * Math.sqrt(amount);
           if (radius < 0.18) continue;
 
-          drawDot(pctx, px, py, radius);
-          drawDot(mctx, px, py, radius);
+          const shape = mixEnabled && cellHash(Math.round(xx * 2), Math.round(yy * 2)) < mixAmount / 100 ? mixScreenType : screenType;
+          drawShape(pctx, shape, px, py, radius, cell, angle);
+          drawShape(mctx, shape, px, py, radius, cell, angle);
         }
       }
       pctx.restore();
@@ -1267,6 +1306,34 @@ export default function HalftoneStudio() {
         process();
       })
     );
+    container.querySelectorAll<HTMLButtonElement>("#screenChips .chip").forEach((b) =>
+      b.addEventListener("click", () => {
+        container.querySelectorAll("#screenChips .chip").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        screenType = b.dataset.screen as ScreenShape;
+        process();
+      })
+    );
+    container.querySelectorAll<HTMLButtonElement>("#screenChips2 .chip").forEach((b) =>
+      b.addEventListener("click", () => {
+        container.querySelectorAll("#screenChips2 .chip").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        mixScreenType = b.dataset.screen as ScreenShape;
+        process();
+      })
+    );
+    $("mixToggle").addEventListener("click", () => {
+      mixEnabled = !mixEnabled;
+      $("mixToggle").textContent = "Mesclar retículas: " + (mixEnabled ? "Ativado" : "Desativado");
+      $("mixToggle").classList.toggle("hot", mixEnabled);
+      $("mixWrap").style.display = mixEnabled ? "block" : "none";
+      process();
+    });
+    $("mixAmount").addEventListener("input", () => {
+      mixAmount = Number(($("mixAmount") as HTMLInputElement).value);
+      labels();
+    });
+    $("mixAmount").addEventListener("change", process);
     ["gain", "removePower", "bgPower", "colorResidual", "saturation", "contrast", "protectTol", "colorTol"].forEach((id) => {
       const el = container.querySelector<HTMLInputElement>("#" + id);
       if (!el) return;
@@ -1489,7 +1556,7 @@ export default function HalftoneStudio() {
         <aside id="sidePanel" className="side">
           <div className="brand">
             <div className="logo">
-              <img src="/assets/logo.png" alt="Halftone Studio" />
+              <img src="/assets/favicon.png" alt="Halftone Studio" />
             </div>
             <div>
               <h1>Halftone Studio</h1>
@@ -1610,6 +1677,62 @@ export default function HalftoneStudio() {
               <button className="chip" data-lpi="50">
                 50
               </button>
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="sectionTitle">Tipo de retícula</div>
+            <div className="dica">
+              <b>Dica:</b> pontos é o padrão para DTF. Linhas, quadrados, losango e cruz dão um efeito gráfico diferente.
+            </div>
+            <div className="chips five" id="screenChips">
+              <button className="chip active" data-screen="dot">
+                Pontos
+              </button>
+              <button className="chip" data-screen="line">
+                Linhas
+              </button>
+              <button className="chip" data-screen="square">
+                Quadrados
+              </button>
+              <button className="chip" data-screen="diamond">
+                Losango
+              </button>
+              <button className="chip" data-screen="cross">
+                Cruz
+              </button>
+            </div>
+            <div className="protectTop" style={{ marginTop: 10 }}>
+              <button id="mixToggle" className="smallBtn" title="Mescla dois tipos de retícula na mesma arte.">
+                Mesclar retículas: Desativado
+              </button>
+            </div>
+            <div id="mixWrap" style={{ display: "none", marginTop: 10 }}>
+              <div className="chips five" id="screenChips2">
+                <button className="chip active" data-screen="line">
+                  Linhas
+                </button>
+                <button className="chip" data-screen="square">
+                  Quadrados
+                </button>
+                <button className="chip" data-screen="diamond">
+                  Losango
+                </button>
+                <button className="chip" data-screen="cross">
+                  Cruz
+                </button>
+                <button className="chip" data-screen="dot">
+                  Pontos
+                </button>
+              </div>
+              <div className="row" style={{ marginTop: 10 }}>
+                <label>Intensidade da mescla</label>
+                <span className="val" id="mixVal">35</span>
+              </div>
+              <input id="mixAmount" type="range" min={0} max={100} defaultValue={35} step={1} />
+              <div className="dica">
+                <b>Dica:</b> controla a proporção entre a retícula principal e a secundária, célula a célula.
+              </div>
             </div>
           </div>
 
