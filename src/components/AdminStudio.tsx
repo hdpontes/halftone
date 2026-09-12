@@ -73,6 +73,27 @@ export default function AdminStudio({ initialUsers, currentUserId }: { initialUs
     }
   }
 
+  async function resetPassword(user: AdminUser) {
+    const newPassword = window.prompt(`Nova senha para ${user.name} (mínimo 6 caracteres):`);
+    if (!newPassword) return;
+    if (newPassword.length < 6) {
+      window.alert("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    setBusyId(user.id);
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      const data = await response.json().catch(() => ({}));
+      window.alert(response.ok ? "Senha atualizada com sucesso." : data.error || "Não foi possível atualizar a senha.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function deleteUser(user: AdminUser) {
     if (user.id === currentUserId) return;
     if (!window.confirm(`Excluir o usuário ${user.name}? Essa ação não pode ser desfeita.`)) return;
@@ -168,6 +189,9 @@ export default function AdminStudio({ initialUsers, currentUserId }: { initialUs
                   <div className="adm-actions">
                     <button className="adm-smallBtn" disabled={busyId === user.id} onClick={() => toggleStatus(user)}>
                       {user.accessStatus === "ACTIVE" ? "Suspender" : "Ativar"}
+                    </button>
+                    <button className="adm-smallBtn" disabled={busyId === user.id} onClick={() => resetPassword(user)} title="Definir uma nova senha para o usuário">
+                      Nova senha
                     </button>
                     <button
                       className="adm-smallBtn adm-smallBtn-danger"
