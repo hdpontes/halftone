@@ -34,8 +34,6 @@ type HalftonePreset = {
   removeHalo: boolean;
 };
 
-const PRESET_STORAGE_KEY = "hop_presets_v1";
-
 export default function HalftoneStudio() {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -1427,49 +1425,56 @@ export default function HalftoneStudio() {
       labels();
       process();
     }
-    function loadPresets(): Record<string, HalftonePreset> {
+    let presetCache: { id: string; name: string; data: HalftonePreset }[] = [];
+    async function loadPresets() {
       try {
-        return JSON.parse(window.localStorage.getItem(PRESET_STORAGE_KEY) || "{}");
+        const res = await fetch("/api/presets");
+        if (!res.ok) return [];
+        const json = await res.json();
+        return (json.presets || []) as { id: string; name: string; data: HalftonePreset }[];
       } catch {
-        return {};
+        return [];
       }
     }
-    function savePresetsMap(presets: Record<string, HalftonePreset>) {
-      window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(presets));
-    }
-    function refreshPresetSelect() {
+    async function refreshPresetSelect() {
       const select = $<HTMLSelectElement>("presetSelect");
-      const presets = loadPresets();
-      const names = Object.keys(presets).sort((a, b) => a.localeCompare(b));
+      presetCache = await loadPresets();
       const current = select.value;
       select.innerHTML = "";
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = names.length ? "Selecione um preset" : "Nenhum preset salvo";
+      placeholder.textContent = presetCache.length ? "Selecione um preset" : "Nenhum preset salvo";
       select.appendChild(placeholder);
-      names.forEach((name) => {
+      presetCache.forEach((p) => {
         const opt = document.createElement("option");
-        opt.value = name;
-        opt.textContent = name;
+        opt.value = p.name;
+        opt.textContent = p.name;
         select.appendChild(opt);
       });
-      if (names.includes(current)) select.value = current;
+      if (presetCache.some((p) => p.name === current)) select.value = current;
     }
     refreshPresetSelect();
-    $("savePresetBtn").addEventListener("click", () => {
+    $("savePresetBtn").addEventListener("click", async () => {
       const nameInput = $<HTMLInputElement>("presetName");
       const name = nameInput.value.trim();
       if (!name) {
         setStatus("Digite um nome para salvar o preset.");
         return;
       }
-      const presets = loadPresets();
-      presets[name] = collectPreset();
-      savePresetsMap(presets);
-      refreshPresetSelect();
-      ($("presetSelect") as HTMLSelectElement).value = name;
-      nameInput.value = "";
-      setStatus(`Preset "${name}" salvo.`);
+      try {
+        const res = await fetch("/api/presets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, data: collectPreset() }),
+        });
+        if (!res.ok) throw new Error();
+        await refreshPresetSelect();
+        ($("presetSelect") as HTMLSelectElement).value = name;
+        nameInput.value = "";
+        setStatus(`Preset "${name}" salvo.`);
+      } catch {
+        setStatus("Erro ao salvar o preset.");
+      }
     });
     $("applyPresetBtn").addEventListener("click", () => {
       const name = ($("presetSelect") as HTMLSelectElement).value;
@@ -1477,25 +1482,29 @@ export default function HalftoneStudio() {
         setStatus("Selecione um preset para aplicar.");
         return;
       }
-      const presets = loadPresets();
-      const preset = presets[name];
+      const preset = presetCache.find((p) => p.name === name);
       if (!preset) return;
-      applyPreset(preset);
+      applyPreset(preset.data);
       setStatus(`Preset "${name}" aplicado.`);
     });
-    $("deletePresetBtn").addEventListener("click", () => {
+    $("deletePresetBtn").addEventListener("click", async () => {
       const select = $<HTMLSelectElement>("presetSelect");
       const name = select.value;
       if (!name) {
         setStatus("Selecione um preset para excluir.");
         return;
       }
+      const preset = presetCache.find((p) => p.name === name);
+      if (!preset) return;
       if (!window.confirm(`Excluir o preset "${name}"?`)) return;
-      const presets = loadPresets();
-      delete presets[name];
-      savePresetsMap(presets);
-      refreshPresetSelect();
-      setStatus(`Preset "${name}" excluído.`);
+      try {
+        const res = await fetch(`/api/presets/${preset.id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error();
+        await refreshPresetSelect();
+        setStatus(`Preset "${name}" excluído.`);
+      } catch {
+        setStatus("Erro ao excluir o preset.");
+      }
     });
 
     $("customWidth").addEventListener("input", syncWidth);
