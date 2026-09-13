@@ -46,15 +46,13 @@ export default function HalftoneStudio() {
     const vctx = viewCanvas.getContext("2d", { willReadFrequently: true })!;
     const original = document.createElement("canvas");
     const clean = document.createElement("canvas");
-    const punched = document.createElement("canvas");
     const result = document.createElement("canvas");
     const displayCrop = document.createElement("canvas");
     const octx = original.getContext("2d", { willReadFrequently: true })!;
     const cctx = clean.getContext("2d", { willReadFrequently: true })!;
-    const pctx = punched.getContext("2d", { willReadFrequently: true })!;
     const rctx = result.getContext("2d", { willReadFrequently: true })!;
     const dctx = displayCrop.getContext("2d", { willReadFrequently: true })!;
-    [vctx, octx, cctx, pctx, rctx, dctx].forEach((c) => {
+    [vctx, octx, cctx, rctx, dctx].forEach((c) => {
       c.imageSmoothingEnabled = false;
       c.imageSmoothingQuality = "low";
     });
@@ -81,10 +79,10 @@ export default function HalftoneStudio() {
     let fillFrame = true;
     let removeHalo = false;
 
-    // Celulares têm bem menos memória para canvas do que desktop; limitar o total de pixels evita a página travar/recarregar em A2/A3.
+    // Celulares têm bem menos memória/limite de dimensão de canvas do que desktop; limitar lado e área evita a página travar/recarregar em A2/A3.
     const isMobileDevice = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const maxSide = isMobileDevice ? 6500 : 9000;
-    const maxMobileMegapixels = 22_000_000;
+    const maxSide = isMobileDevice ? 4000 : 9000;
+    const maxMobileMegapixels = 11_000_000;
 
     function unitName(u: string) {
       return u === "cm" ? "cm" : u === "mm" ? "mm" : u === "in" ? "pol" : "px";
@@ -193,11 +191,11 @@ export default function HalftoneStudio() {
       return [Math.round(w * cap), Math.round(h * cap)];
     }
     function setCanv(w: number, h: number) {
-      [original, clean, punched, result, viewCanvas].forEach((c) => {
+      [original, clean, result, viewCanvas].forEach((c) => {
         c.width = w;
         c.height = h;
       });
-      [vctx, octx, cctx, pctx, rctx].forEach((c) => {
+      [vctx, octx, cctx, rctx].forEach((c) => {
         c.imageSmoothingEnabled = false;
         c.imageSmoothingQuality = "low";
       });
@@ -1024,12 +1022,12 @@ export default function HalftoneStudio() {
         rows = Math.ceil(diag / cell) + 4;
       const src = cctx.getImageData(0, 0, w, h).data;
 
-      pctx.clearRect(0, 0, w, h);
-      pctx.drawImage(clean, 0, 0);
+      rctx.clearRect(0, 0, w, h);
+      rctx.drawImage(clean, 0, 0);
 
-      pctx.save();
-      pctx.globalCompositeOperation = "destination-out";
-      pctx.globalAlpha = 1;
+      rctx.save();
+      rctx.globalCompositeOperation = "destination-out";
+      rctx.globalAlpha = 1;
 
       for (let yy = -rows / 2; yy < rows / 2; yy++) {
         for (let xx = -cols / 2; xx < cols / 2; xx++) {
@@ -1061,15 +1059,13 @@ export default function HalftoneStudio() {
           if (radius < 0.18) continue;
 
           const shape = mixEnabled && cellHash(Math.round(xx * 2), Math.round(yy * 2)) < mixAmount / 100 ? mixScreenType : screenType;
-          drawShape(pctx, shape, px, py, radius, cell, angle);
+          drawShape(rctx, shape, px, py, radius, cell, angle);
         }
       }
-      pctx.restore();
+      rctx.restore();
 
-      hardenAlpha(punched);
+      hardenAlpha(result);
 
-      rctx.clearRect(0, 0, w, h);
-      rctx.drawImage(punched, 0, 0);
       cleanupResultResidualDust();
       cleanupResultColorSpill();
       cleanupResultColorContaminationGlobal();
