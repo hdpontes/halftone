@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasFullAccess } from "@/lib/subscription";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -38,8 +39,7 @@ function runMagick(args: string[]) {
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Faça login para usar o Halftone Studio." }, { status: 401 });
-  const user = await prisma.user.findUnique({ where: { id: session.id }, select: { accessStatus: true } });
-  if (!user || user.accessStatus !== "ACTIVE") return NextResponse.json({ error: "Sua assinatura não está ativa." }, { status: 403 });
+  if (!(await hasFullAccess(session.id))) return NextResponse.json({ error: "Sua assinatura não está ativa." }, { status: 403 });
 
   const form = await request.formData();
   const image = form.get("image");
