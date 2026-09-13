@@ -6,7 +6,7 @@
     radial-gradient(circle at 30% -15%,rgba(155,92,255,.34),transparent 38%),
     radial-gradient(circle at 95% 0%,rgba(255,122,47,.14),transparent 34%),#07070c;
   color:var(--text);font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;font-size:14px;
-  height:calc(100vh - 60px);overflow:hidden;
+  height:100vh;height:100dvh;overflow:hidden;
 }
 .hop-root *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 .hop-root button,.hop-root input,.hop-root select{font:inherit}
