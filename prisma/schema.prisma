@@ -18,6 +18,14 @@ enum AccessStatus {
   SUSPENDED
 }
 
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELED
+  REFUNDED
+  CHARGEBACK
+}
+
 model User {
   id            String       @id @default(cuid())
   name          String
@@ -30,6 +38,7 @@ model User {
   updatedAt     DateTime     @updatedAt
   lastLoginAt   DateTime?
   presets       HalftonePreset[]
+  subscriptions Subscription[]
 }
 
 model HalftonePreset {
@@ -50,4 +59,24 @@ model AuditLog {
   email     String?
   metadata  Json?
   createdAt DateTime @default(now())
+}
+
+model Subscription {
+  id                    String             @id @default(cuid())
+  userId                String
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                  String
+  status                SubscriptionStatus @default(ACTIVE)
+  hotmartTransaction    String             @unique
+  hotmartSubscriptionId String?
+  hotmartProductId      String?
+  hotmartOfferCode      String?
+  startsAt              DateTime           @default(now())
+  expiresAt             DateTime
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
 }
