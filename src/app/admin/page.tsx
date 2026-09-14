@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import AdminStudio from "@/components/AdminStudio";
+import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 export default async function AdminPage() {
   const session = await getSession();
@@ -15,5 +16,10 @@ export default async function AdminPage() {
     accessStatus: user.accessStatus,
     createdAt: user.createdAt.toISOString(),
   }));
-  return <AdminStudio initialUsers={plainUsers} currentUserId={session.id} />;
+  return (
+    <>
+      <ChangePasswordModal forceOpen={session.mustChangePassword} />
+      <AdminStudio initialUsers={plainUsers} currentUserId={session.id} />
+    </>
+  );
 }
