@@ -18,6 +18,6 @@ export async function POST(request: Request) {
   if (existing) return NextResponse.json({ error: "Já existe um usuário com esse email." }, { status: 409 });
 
   const passwordHash = await hashPassword(password);
-  const user = await prisma.user.create({ data: { name, email, passwordHash, role, accessStatus: "ACTIVE" } });
+  const user = await prisma.user.create({ data: { name, email, passwordHash, role, accessStatus: "ACTIVE", mustChangePassword: true } });
   return NextResponse.json({ id: user.id, createdAt: user.createdAt.toISOString() });
 }
