@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET || "development-secret-change-me");
-export type Session = { id: string; name: string; email: string; role: "ADMIN" | "MEMBER" };
+  export type Session = { id: string; name: string; email: string; role: "ADMIN" | "MEMBER"; mustChangePassword: boolean };
 
 // Builds an absolute URL using the reverse-proxy's original host/proto instead of the internal bind address (e.g. 0.0.0.0)
 export function absoluteUrl(path: string, request: Request) {
