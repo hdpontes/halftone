@@ -12,7 +12,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const password = body.password;
     if (password.length < 6) return NextResponse.json({ error: "A senha deve ter pelo menos 6 caracteres." }, { status: 400 });
     const passwordHash = await hashPassword(password);
-    await prisma.user.update({ where: { id }, data: { passwordHash } });
+    await prisma.user.update({ where: { id }, data: { passwordHash, mustChangePassword: true } });
     return NextResponse.json({ ok: true });
   }
   const status = body?.status;
