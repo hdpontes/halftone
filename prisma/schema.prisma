@@ -27,18 +27,19 @@ enum SubscriptionStatus {
 }
 
 model User {
-  id            String       @id @default(cuid())
-  name          String
-  email         String       @unique
-  passwordHash  String
-  role          Role         @default(MEMBER)
-  accessStatus  AccessStatus @default(PENDING)
-  hotmartId     String?      @unique
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  lastLoginAt   DateTime?
-  presets       HalftonePreset[]
-  subscriptions Subscription[]
+  id                String       @id @default(cuid())
+  name              String
+  email             String       @unique
+  passwordHash      String
+  role              Role         @default(MEMBER)
+  accessStatus      AccessStatus @default(PENDING)
+  hotmartId         String?      @unique
+  mustChangePassword Boolean     @default(false)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  lastLoginAt       DateTime?
+  presets           HalftonePreset[]
+  subscriptions     Subscription[]
 }
 
 model HalftonePreset {
