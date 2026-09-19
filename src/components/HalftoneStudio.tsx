@@ -18,7 +18,7 @@ import {
 } from "../lib/halftone";
 // PASSO 6G — Pro CMYK integration. Diagnostic-only modules (dtf/engine.ts, dtf/compose.ts) are
 // consumed as-is; no math inside them is modified by this component.
-import { buildPrintLayerSet, DEFAULT_PRINT_ENGINE_SETTINGS } from "../lib/dtf/engine";
+import { buildPrintLayerSet } from "../lib/dtf/engine";
 import { composePrintPreview, paintDots, paintCoverageGrid, CHANNEL_COLORS, type RasterBuffer } from "../lib/dtf/compose";
 import type { PrintEngineSettings, PrintLayerSet } from "../lib/dtf/types";
 import { DEFAULT_COLOR_SEPARATION_SETTINGS } from "../lib/color/separation";
