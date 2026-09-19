@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -8,6 +7,7 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasFullAccess } from "@/lib/subscription";
+import { runProfessionalExportWorker } from "@/lib/halftone/professional-export-worker";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -24,17 +24,6 @@ const settingsSchema = z.object({
 });
 
 const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/tiff"]);
-const thresholdMaps = { round: "h8x8a", ellipse: "h4x4a", line: "h4x4o" } as const;
-
-function runMagick(args: string[]) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn("magick", args, { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    child.on("error", reject);
-    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(stderr || `ImageMagick exited with ${code}`)));
-  });
-}
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -54,15 +43,37 @@ export async function POST(request: Request) {
   const outputPath = join(workspace, `${randomUUID()}-output.png`);
   try {
     await writeFile(inputPath, Buffer.from(await image.arrayBuffer()));
-    const map = lpi <= 30 ? "h16x16o" : thresholdMaps[dot];
-    const colorspace = mode === "cmyk" ? "CMYK" : "Gray";
-    const outputColorspace = mode === "cmyk" ? "sRGB" : "Gray";
-    const args = [inputPath, "-auto-orient", "-alpha", "on", "-background", "none", "-colorspace", colorspace, "-brightness-contrast", `${brightness}x${contrast}`, "-virtual-pixel", "edge", "-distort", "SRT", String(angle), "-ordered-dither", map, "-colorspace", outputColorspace, "-density", String(dpi), "-units", "PixelsPerInch"];
-    if (transparent) args.push("-transparent", "white");
-    args.push(`PNG32:${outputPath}`);
-    await runMagick(args);
+    const exportResult = await runProfessionalExportWorker({
+      inputPath,
+      outputPath,
+      mode,
+      lpi,
+      angle,
+      dpi,
+      dot,
+      contrast,
+      brightness,
+      transparent,
+    });
     const output = await readFile(outputPath);
-    await prisma.auditLog.create({ data: { action: "HALFTONE_EXPORT", email: session.email, metadata: { mode, lpi, angle, dpi, dot, contrast, brightness, transparent, inputBytes: image.size } } });
+    await prisma.auditLog.create({
+      data: {
+        action: "HALFTONE_EXPORT",
+        email: session.email,
+        metadata: {
+          mode,
+          lpi,
+          angle,
+          dpi,
+          dot,
+          contrast,
+          brightness,
+          transparent,
+          inputBytes: image.size,
+          backendEngine: exportResult.engineUsed,
+        },
+      },
+    });
     return new NextResponse(output, { headers: { "Content-Type": "image/png", "Content-Disposition": `attachment; filename="halftone-${lpi}lpi-${angle}deg.png"`, "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Halftone processing failed", error);
