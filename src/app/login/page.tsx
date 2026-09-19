@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import "../login-studio.css";
 
 export default function LoginPage() {
@@ -26,7 +27,7 @@ export default function LoginPage() {
 
   return (
     <div className="login-studio">
-      <a className="back-link" href="/">← Voltar para o site</a>
+      <Link className="back-link" href="/">← Voltar para o site</Link>
       <main className="ls-shell">
         <section className="ls-showcase">
           <div>
