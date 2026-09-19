@@ -1,6 +1,28 @@
+# Dependencies
 node_modules/
+
+# Next.js
 .next/
 out/
+
+# Build/cache
+*.tsbuildinfo
+
+# Environment
 .env
 .env.local
+.env.*.local
+
+# Logs
 *.log
+
+# Test outputs
+test-output/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
