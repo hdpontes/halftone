@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum AccessStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELED
+  REFUNDED
+  CHARGEBACK
+}
+
+model User {
+  id                String       @id @default(cuid())
+  name              String
+  email             String       @unique
+  passwordHash      String
+  role              Role         @default(MEMBER)
+  accessStatus      AccessStatus @default(PENDING)
+  hotmartId         String?      @unique
+  mustChangePassword Boolean     @default(false)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  lastLoginAt       DateTime?
+  presets           HalftonePreset[]
+  subscriptions     Subscription[]
+}
+
+model HalftonePreset {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  email     String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+model Subscription {
+  id                    String             @id @default(cuid())
+  userId                String
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                  String
+  status                SubscriptionStatus @default(ACTIVE)
+  hotmartTransaction    String             @unique
+  hotmartSubscriptionId String?
+  hotmartProductId      String?
+  hotmartOfferCode      String?
+  startsAt              DateTime           @default(now())
+  expiresAt             DateTime
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+}
