@@ -7,7 +7,8 @@ import { DEFAULT_HALFTONE_SETTINGS, type HalftoneAlgorithm, type WhiteMode } fro
 // CMYK+White pipeline below (buildPrintLayerSet/composePrintPreview/exportFinalDtfPng). The former
 // Legacy and Pro-RGB (single-channel dot-punch) pipelines have been removed; math in dtf/engine.ts,
 // dtf/compose.ts, dtf/export.ts and lib/halftone/* is untouched.
-import { buildPrintLayerSet } from "../lib/dtf/engine";
+import { resolveRealtimePrintEngine } from "../lib/dtf/realtime-engine";
+import { initRealtimeWasmBridge } from "../lib/dtf/wasm-runtime";
 import { composePrintPreview, paintDots, paintCoverageGrid, CHANNEL_COLORS, type RasterBuffer } from "../lib/dtf/compose";
 import type { PrintEngineSettings, PrintLayerSet } from "../lib/dtf/types";
 import { DEFAULT_COLOR_SEPARATION_SETTINGS } from "../lib/color/separation";
@@ -16,14 +17,14 @@ import { exportFinalDtfPng } from "../lib/dtf/export";
 
 type CmykChannelKey = "cyan" | "magenta" | "yellow" | "black";
 type CmykPreviewMode = "composite" | CmykChannelKey | "white";
-type HalftoneProfile = "balanced" | "detail" | "soft" | "stochastic" | "hybrid";
+type HalftoneProfile = "am_conventional" | "am_ellipse" | "am_rosette" | "fm_stochastic" | "hybrid";
 
 const HALFTONE_PROFILE_LABEL: Record<HalftoneProfile, string> = {
-  balanced: "Padrão DTF",
-  detail: "Detalhe Fino",
-  soft: "Suave",
-  stochastic: "Estocástico (FM)",
-  hybrid: "Híbrido",
+  am_conventional: "AM Convencional",
+  am_ellipse: "AM Elíptica",
+  am_rosette: "Roseta",
+  fm_stochastic: "FM Estocástica",
+  hybrid: "Híbrida",
 };
 
 /**
@@ -105,8 +106,9 @@ export default function HalftoneStudio() {
     let cmykPreviewMode: CmykPreviewMode = "composite";
     let cmykDotShape: ScreenShape = DEFAULT_CMYK_SCREEN_SETTINGS.cyan.dotShape as ScreenShape;
     let cmykLpi = DEFAULT_CMYK_SCREEN_SETTINGS.cyan.lpi;
-    let halftoneProfile: HalftoneProfile = "balanced";
+    let halftoneProfile: HalftoneProfile = "am_conventional";
     let cmykLastLayers: PrintLayerSet | null = null;
+    void initRealtimeWasmBridge();
 
     // Celulares têm bem menos memória/limite de dimensão de canvas do que desktop; limitar lado e área evita a página travar/recarregar em A2/A3.
     const isMobileDevice = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -226,21 +228,21 @@ export default function HalftoneStudio() {
         blackAlgorithm = algo;
         whiteAlgorithm = algo;
       };
-      if (profile === "detail") {
-        cmykLpi = 55;
+      if (profile === "am_ellipse") {
+        cmykLpi = 50;
         cmykDotShape = "ellipse";
         assignAlgorithms("am");
-      } else if (profile === "soft") {
-        cmykLpi = 35;
-        cmykDotShape = "round";
+      } else if (profile === "am_rosette") {
+        cmykLpi = 55;
+        cmykDotShape = "rosette";
         assignAlgorithms("am");
-      } else if (profile === "stochastic") {
-        cmykLpi = 45;
+      } else if (profile === "fm_stochastic") {
+        cmykLpi = 40;
         cmykDotShape = "round";
         assignAlgorithms("fm");
       } else if (profile === "hybrid") {
         cmykLpi = 45;
-        cmykDotShape = "rosette";
+        cmykDotShape = "round";
         assignAlgorithms("hybrid");
       } else {
         cmykLpi = 45;
@@ -917,7 +919,8 @@ export default function HalftoneStudio() {
       adjust(clean);
       const settings = buildPrintEngineSettingsFromUI();
       const imgd = cctx.getImageData(0, 0, w, h);
-      cmykLastLayers = buildPrintLayerSet(imgd.data, w, h, settings);
+      const realtimeEngine = resolveRealtimePrintEngine();
+      cmykLastLayers = realtimeEngine.buildLayerSet(imgd.data, w, h, settings);
       renderCmykPreviewToResult();
     }
 
@@ -1345,7 +1348,7 @@ export default function HalftoneStudio() {
       b.addEventListener("click", () => {
         container.querySelectorAll("#halftoneProfileChips .chip").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
-        applyHalftoneProfile((b.dataset.profile as HalftoneProfile) || "balanced");
+        applyHalftoneProfile((b.dataset.profile as HalftoneProfile) || "am_conventional");
         process();
       })
     );
@@ -1553,7 +1556,7 @@ export default function HalftoneStudio() {
     window.addEventListener("orientationchange", onOrientation);
     window.visualViewport?.addEventListener("resize", responsiveFit);
 
-    applyHalftoneProfile("balanced");
+    applyHalftoneProfile("am_conventional");
     labels();
     updateCmykExportState();
 
@@ -1712,14 +1715,14 @@ export default function HalftoneStudio() {
               <b>Escolha um perfil pronto.</b> O motor profissional ajusta CMYK + White internamente para impressão DTF.
             </div>
             <div className="chips" id="halftoneProfileChips">
-              <button className="chip active" data-profile="balanced">Padrão DTF</button>
-              <button className="chip" data-profile="detail">Detalhe Fino</button>
-              <button className="chip" data-profile="soft">Suave</button>
-              <button className="chip" data-profile="stochastic">Estocástico (FM)</button>
-              <button className="chip" data-profile="hybrid">Híbrido</button>
+              <button className="chip active" data-profile="am_conventional">AM Convencional</button>
+              <button className="chip" data-profile="am_ellipse">AM Elíptica</button>
+              <button className="chip" data-profile="am_rosette">Roseta</button>
+              <button className="chip" data-profile="fm_stochastic">FM Estocástica</button>
+              <button className="chip" data-profile="hybrid">Híbrida</button>
             </div>
             <div className="miniText" id="profileInfo" style={{ marginTop: 8 }}>
-              Padrão DTF • 45 LPI • round
+              AM Convencional • 45 LPI • round
             </div>
             <div className="row" style={{ marginTop: 14 }}>
               <label>Preview</label>
