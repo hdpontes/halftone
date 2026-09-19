@@ -2,22 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import "../app/halftone-studio.css";
-import {
-  DEFAULT_HALFTONE_SETTINGS,
-  composeDtfPreview,
-  exportDtfLayers,
-  renderColorLayer,
-  renderWhiteLayer,
-  resolvePreset,
-  runHalftoneEngine,
-  validateDpiLpi,
-  type HalftoneAlgorithm,
-  type HalftoneSettings,
-  type PreviewMode,
-  type WhiteMode,
-} from "../lib/halftone";
-// PASSO 6G — Pro CMYK integration. Diagnostic-only modules (dtf/engine.ts, dtf/compose.ts) are
-// consumed as-is; no math inside them is modified by this component.
+import { DEFAULT_HALFTONE_SETTINGS, type HalftoneAlgorithm, type WhiteMode } from "../lib/halftone";
+// PASSO 7B — Halftone PRO is now the ONLY engine exposed by this component. It always runs the
+// CMYK+White pipeline below (buildPrintLayerSet/composePrintPreview/exportFinalDtfPng). The former
+// Legacy and Pro-RGB (single-channel dot-punch) pipelines have been removed; math in dtf/engine.ts,
+// dtf/compose.ts, dtf/export.ts and lib/halftone/* is untouched.
 import { buildPrintLayerSet } from "../lib/dtf/engine";
 import { composePrintPreview, paintDots, paintCoverageGrid, CHANNEL_COLORS, type RasterBuffer } from "../lib/dtf/compose";
 import type { PrintEngineSettings, PrintLayerSet } from "../lib/dtf/types";
@@ -25,7 +14,6 @@ import { DEFAULT_COLOR_SEPARATION_SETTINGS } from "../lib/color/separation";
 import { DEFAULT_CMYK_SCREEN_SETTINGS, type ChannelScreenSettings } from "../lib/color/screening";
 import { exportFinalDtfPng } from "../lib/dtf/export";
 
-type EngineMode = "pro" | "legacy" | "pro-cmyk";
 type CmykChannelKey = "cyan" | "magenta" | "yellow" | "black";
 type CmykPreviewMode = "composite" | CmykChannelKey | "white";
 
@@ -45,23 +33,11 @@ type ScreenShape = "round" | "diamond" | "square" | "ellipse" | "line" | "rosett
 
 type HalftonePreset = {
   mode: "dark" | "color" | "light";
-  screenType: ScreenShape;
-  mixEnabled: boolean;
-  mixScreenType: ScreenShape;
-  mixAmount: number;
-  lpi: number;
-  screenAngle: number;
-  blackPoint: number;
-  whitePoint: number;
-  gamma: number;
-  gain: number;
-  dotGain: number;
   removePower: number;
   bgPower: number;
   colorResidual: number;
   saturation: number;
   contrast: number;
-  protectTol: number;
   colorTol: number;
   dpi: number;
   fillFrame: boolean;
@@ -97,27 +73,18 @@ export default function HalftoneStudio() {
     let dpi = 300;
     let zoom = 1;
     let showBefore = false;
-    let pickingProtect = false;
     let pickingBg = false;
     let manualBgColor = false;
-    let protectEnabled = true;
     let previewBg: "checker" | "black" | "white" | "custom" = "checker";
     let aspectRatio = 1;
-    let protectedColors: { r: number; g: number; b: number }[] = [];
     let sampledBgColor = { r: 0, g: 0, b: 0 };
-    let screenType: ScreenShape = "round";
-    let mixEnabled = false;
-    let mixScreenType: ScreenShape = "line";
-    let mixAmount = 35;
     let lockRatio = true;
     let fillFrame = true;
     let removeHalo = false;
+    let isExporting = false;
 
-    // --- PASSO 2: Halftone Engine PRO (AM/FM/Hybrid + White Underbase) ---
-    // engine="legacy" preserves the original pipeline above untouched as a fallback.
-    // PASSO 6G adds engineMode="pro-cmyk" as a third, opt-in engine; default stays "pro" (unchanged).
-    let engineMode: EngineMode = "pro";
-    let algorithm: HalftoneAlgorithm = "am";
+    // --- Halftone Engine PRO (AM/FM/Hybrid + White Underbase + independent CMYK) ---
+    // This is now the ONLY engine used by this component (Legacy and Pro-RGB removed in PASSO 7B).
     let whiteMode: WhiteMode = "none";
     let whiteDensity = DEFAULT_HALFTONE_SETTINGS.whiteDensity;
     let whiteChoke = DEFAULT_HALFTONE_SETTINGS.whiteChoke;
@@ -126,11 +93,9 @@ export default function HalftoneStudio() {
     let whiteGamma = DEFAULT_HALFTONE_SETTINGS.whiteGamma;
     let whiteDotShape: ScreenShape = DEFAULT_HALFTONE_SETTINGS.whiteDotShape;
     let whiteAlgorithm: HalftoneAlgorithm = DEFAULT_HALFTONE_SETTINGS.whiteAlgorithm;
-    let previewMode: PreviewMode = "color";
-    let whiteLayerCanvas: HTMLCanvasElement | null = null;
 
-    // --- PASSO 6G: Pro CMYK (independent C/M/Y/K screening + White + subtractive preview) ---
-    // White reuses the whiteMode/whiteDensity/... vars above (never duplicated).
+    // Independent C/M/Y/K screening + White + subtractive preview. White reuses the whiteMode/
+    // whiteDensity/... vars above (never duplicated).
     let cyanAlgorithm: HalftoneAlgorithm = DEFAULT_CMYK_SCREEN_SETTINGS.cyan.algorithm;
     let magentaAlgorithm: HalftoneAlgorithm = DEFAULT_CMYK_SCREEN_SETTINGS.magenta.algorithm;
     let yellowAlgorithm: HalftoneAlgorithm = DEFAULT_CMYK_SCREEN_SETTINGS.yellow.algorithm;
@@ -203,30 +168,19 @@ export default function HalftoneStudio() {
       $("stageLoading").querySelector("span")!.textContent = msg;
     }
     function updatePickCursor() {
-      const active = !!(pickingBg || pickingProtect);
-      $("viewer").classList.toggle("picking", active);
-      $("canvasWrap").classList.toggle("picking", active);
+      $("viewer").classList.toggle("picking", pickingBg);
+      $("canvasWrap").classList.toggle("picking", pickingBg);
     }
     function colorResidualBoost() {
       return Number(($("colorResidual") as HTMLInputElement | null)?.value || 0);
     }
     function labels() {
-      $("gainVal").textContent = Number(($("gain") as HTMLInputElement).value).toFixed(2);
-      $("dotGainVal").textContent = (Number(($("dotGain") as HTMLInputElement).value) > 0 ? "+" : "") + ($("dotGain") as HTMLInputElement).value + "%";
       $("removeVal").textContent = ($("removePower") as HTMLInputElement).value;
       $("bgPowerVal").textContent = ($("bgPower") as HTMLInputElement).value;
       const colorResidualVal = container.querySelector("#colorResidualVal");
       if (colorResidualVal) colorResidualVal.textContent = ($("colorResidual") as HTMLInputElement).value;
       $("satVal").textContent = ($("saturation") as HTMLInputElement).value + "%";
       $("contrastVal").textContent = ($("contrast") as HTMLInputElement).value;
-      $("lpiVal").textContent = ($("lpi") as HTMLInputElement).value;
-      $("angleVal").textContent = ($("screenAngle") as HTMLInputElement).value + "°";
-      $("blackPointVal").textContent = ($("blackPoint") as HTMLInputElement).value;
-      $("whitePointVal").textContent = ($("whitePoint") as HTMLInputElement).value;
-      $("gammaVal").textContent = Number(($("gamma") as HTMLInputElement).value).toFixed(1);
-      const mixValEl = container.querySelector("#mixVal");
-      if (mixValEl) mixValEl.textContent = ($("mixAmount") as HTMLInputElement).value;
-      $("protectTolVal").textContent = ($("protectTol") as HTMLInputElement).value;
       const colorTolVal = container.querySelector("#colorTolVal");
       if (colorTolVal) colorTolVal.textContent = ($("colorTol") as HTMLInputElement).value;
       const bgColorText = container.querySelector("#bgColorText");
@@ -262,12 +216,6 @@ export default function HalftoneStudio() {
     // matemática interna do FM, não por uma grade AM). Não altera a matemática do FM —
     // apenas desabilita/anota visualmente o controle de LPI correspondente.
     function updateLpiAvailability() {
-      const lpiInput = container.querySelector<HTMLInputElement>("#lpi");
-      const lpiNote = container.querySelector<HTMLElement>("#lpiFmNote");
-      const isColorFm = algorithm === "fm";
-      if (lpiInput) lpiInput.disabled = isColorFm;
-      if (lpiNote) lpiNote.style.display = isColorFm ? "block" : "none";
-
       const whiteLpiInput = container.querySelector<HTMLInputElement>("#whiteLpi");
       const whiteLpiNote = container.querySelector<HTMLElement>("#whiteLpiFmNote");
       const isWhiteFm = whiteAlgorithm === "fm";
@@ -293,16 +241,9 @@ export default function HalftoneStudio() {
     function updateCmykExportState() {
       const btn = container.querySelector<HTMLButtonElement>("#saveBtn");
       if (!btn) return;
-      const isCmyk = engineMode === "pro-cmyk";
       btn.disabled = false;
-      btn.title = isCmyk ? "Gera o PNG final DTF (White + CMYK + Alpha) em 300 DPI, pronto para impressão." : "";
-      btn.textContent = isCmyk ? "Salvar PNG (300 DPI)" : "Baixar PNG";
-    }
-    function setEngineMode(next: EngineMode) {
-      engineMode = next;
-      const cmykSection = container.querySelector<HTMLElement>("#proCmykSection");
-      if (cmykSection) cmykSection.style.display = engineMode === "pro-cmyk" ? "block" : "none";
-      updateCmykExportState();
+      btn.title = "Gera o PNG final DTF (White + CMYK + Alpha) em 300 DPI, pronto para impressão.";
+      btn.textContent = "Baixar PNG (300 DPI)";
     }
     function targetSize(): [number, number] {
       if (!img) return [0, 0];
@@ -740,54 +681,6 @@ export default function HalftoneStudio() {
       }
     }
 
-    function cleanupResultColorSpill() {
-      if (mode !== "color") return;
-      const power = Number(($("bgPower") as HTMLInputElement | null)?.value || 0);
-      const extraResidual = colorResidualBoost();
-      const effectivePower = power + extraResidual;
-      if (effectivePower < 30) return;
-      const bg = sampledBgColor || sampleBorder() || { r: 255, g: 255, b: 255 };
-      const localTol = Number(($("colorTol") as HTMLInputElement | null)?.value || 48);
-      const w = result.width,
-        h = result.height;
-      const imgd = rctx.getImageData(0, 0, w, h),
-        d = imgd.data;
-      const src = new Uint8ClampedArray(d);
-
-      function nearTransparency(x: number, y: number) {
-        for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) {
-          for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) {
-            if (xx === x && yy === y) continue;
-            const p = (yy * w + xx) * 4;
-            if (src[p + 3] < 8) return true;
-          }
-        }
-        return false;
-      }
-
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const p = (y * w + x) * 4;
-          const a = src[p + 3];
-          if (a < 8) continue;
-          if (!nearTransparency(x, y)) continue;
-          const bgDist = dist(src[p], src[p + 1], src[p + 2], bg);
-          if (bgDist > localTol + 26 + effectivePower * 0.24) continue;
-          const S = sat(src[p], src[p + 1], src[p + 2]);
-          const L = lum(src[p], src[p + 1], src[p + 2]);
-          if (bgDist <= localTol + 10 || effectivePower >= 105) {
-            d[p + 3] = 0;
-          } else if (bgDist <= localTol + 24) {
-            let keep = 0.45;
-            if (effectivePower >= 80) keep = 0.2;
-            if (S < 0.18 || L > 180) keep *= 0.75;
-            d[p + 3] = Math.round(a * keep);
-          }
-        }
-      }
-      rctx.putImageData(imgd, 0, 0);
-    }
-
     function cleanupColorContaminationGlobal(imgd: ImageData, bg: { r: number; g: number; b: number }) {
       if (mode !== "color") return;
       const power = Number(($("bgPower") as HTMLInputElement | null)?.value || 0);
@@ -855,36 +748,6 @@ export default function HalftoneStudio() {
       }
     }
 
-    function cleanupResultColorContaminationGlobal() {
-      if (mode !== "color") return;
-      const power = Number(($("bgPower") as HTMLInputElement | null)?.value || 0);
-      const extraResidual = colorResidualBoost();
-      const effectivePower = power + extraResidual;
-      if (effectivePower < 25) return;
-      const bg = sampledBgColor || sampleBorder() || { r: 255, g: 255, b: 255 };
-      const localTol = Number(($("colorTol") as HTMLInputElement | null)?.value || 48);
-      const strictTol = localTol + 26 + effectivePower * 0.48;
-      const fadeTol = strictTol + 28;
-      const imgd = rctx.getImageData(0, 0, result.width, result.height),
-        d = imgd.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const a = d[i + 3];
-        if (a < 8) continue;
-        const bgDist = dist(d[i], d[i + 1], d[i + 2], bg);
-        if (bgDist > fadeTol) continue;
-        const S = sat(d[i], d[i + 1], d[i + 2]);
-        const L = lum(d[i], d[i + 1], d[i + 2]);
-        if (bgDist <= strictTol || effectivePower >= 105) {
-          d[i + 3] = 0;
-        } else {
-          let keep = 0.22;
-          if (effectivePower >= 80) keep = 0.06;
-          if (S < 0.26 || L > 165) keep *= 0.75;
-          d[i + 3] = Math.round(a * keep);
-        }
-      }
-      rctx.putImageData(imgd, 0, 0);
-    }
     function removeBg() {
       const w = original.width,
         h = original.height;
@@ -937,11 +800,6 @@ export default function HalftoneStudio() {
         }
       }
     }
-    function isProtected(r: number, g: number, b: number) {
-      if (!protectEnabled || !protectedColors.length) return false;
-      const tol = Number(($("protectTol") as HTMLInputElement).value);
-      return protectedColors.some((c) => dist(r, g, b, c) <= tol);
-    }
     function adjust(canvas: HTMLCanvasElement) {
       const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
       const imgd = ctx.getImageData(0, 0, canvas.width, canvas.height),
@@ -971,425 +829,9 @@ export default function HalftoneStudio() {
       }
       ctx.putImageData(imgd, 0, 0);
     }
-    function applyLevels(v: number) {
-      const black = Number(($("blackPoint") as HTMLInputElement).value);
-      const white = Math.max(black + 1, Number(($("whitePoint") as HTMLInputElement).value));
-      const gammaVal = Math.max(0.1, Number(($("gamma") as HTMLInputElement).value));
-      let t = clamp((v - black) / (white - black), 0, 1);
-      t = Math.pow(t, 1 / gammaVal);
-      return t * 255;
-    }
-    function drawDot(ctx2: CanvasRenderingContext2D, px: number, py: number, radius: number) {
-      if (radius <= 0) return;
-      ctx2.beginPath();
-      ctx2.arc(px, py, radius, 0, Math.PI * 2);
-      ctx2.fill();
-    }
-    function cellHash(x: number, y: number) {
-      let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
-      h = Math.imul(h ^ (h >>> 13), 1274126177);
-      h = h ^ (h >>> 16);
-      return (h >>> 0) / 4294967295;
-    }
-    function drawShape(ctx2: CanvasRenderingContext2D, shape: ScreenShape, px: number, py: number, radius: number, cellSize: number, rotAngle: number) {
-      if (radius <= 0) return;
-      if (shape === "round") {
-        drawDot(ctx2, px, py, radius);
-        return;
-      }
-      ctx2.save();
-      ctx2.translate(px, py);
-      ctx2.rotate(rotAngle);
-      if (shape === "square" || shape === "diamond") {
-        const side = radius * 1.772;
-        if (shape === "diamond") ctx2.rotate(Math.PI / 4);
-        ctx2.fillRect(-side / 2, -side / 2, side, side);
-      } else if (shape === "ellipse") {
-        const rx = radius * 1.35;
-        const ry = radius * 0.72;
-        ctx2.beginPath();
-        ctx2.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-        ctx2.fill();
-      } else if (shape === "line") {
-        const barHeight = Math.max(0.4, radius * 1.6);
-        ctx2.fillRect(-cellSize / 2, -barHeight / 2, cellSize, barHeight);
-      } else if (shape === "rosette") {
-        const sub = Math.max(0.3, radius * 0.5);
-        const spread = Math.min(cellSize * 0.28, radius * 0.9 + 0.6);
-        const offsetsDeg = [0, 45, 90, 135];
-        for (const deg of offsetsDeg) {
-          const rad = (deg * Math.PI) / 180;
-          const ox = Math.cos(rad) * spread;
-          const oy = Math.sin(rad) * spread;
-          ctx2.beginPath();
-          ctx2.arc(ox, oy, sub, 0, Math.PI * 2);
-          ctx2.fill();
-        }
-      }
-      ctx2.restore();
-    }
-    function hardenAlpha(canvas: HTMLCanvasElement) {
-      const hctx = canvas.getContext("2d", { willReadFrequently: true })!;
-      const imgd = hctx.getImageData(0, 0, canvas.width, canvas.height);
-      const d = imgd.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const a = d[i + 3];
-        if (a === 0) continue;
-        let na;
-        if (a <= 18) na = 0;
-        else if (a >= 238) na = 255;
-        else {
-          const t = (a - 18) / 220;
-          na = clamp(Math.round(Math.pow(t, 0.78) * 255), 0, 255);
-        }
-        d[i + 3] = na;
-      }
-      hctx.putImageData(imgd, 0, 0);
-    }
-    function binarizeAlpha(canvas: HTMLCanvasElement, threshold = 128) {
-      const bctx = canvas.getContext("2d", { willReadFrequently: true })!;
-      const imgd = bctx.getImageData(0, 0, canvas.width, canvas.height);
-      const d = imgd.data;
-      for (let i = 3; i < d.length; i += 4) {
-        d[i] = d[i] >= threshold ? 255 : 0;
-      }
-      bctx.putImageData(imgd, 0, 0);
-    }
-    function crc32(buf: Uint8Array) {
-      let crc = 0xffffffff;
-      for (let i = 0; i < buf.length; i++) {
-        crc ^= buf[i];
-        for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
-      }
-      return (crc ^ 0xffffffff) >>> 0;
-    }
-    async function embedPngDpi(blob: Blob, dpiValue: number): Promise<Blob> {
-      // Canvas-exported PNGs carry no resolution metadata, so other apps assume a default DPI
-      // (72/96) and show the wrong physical size; embed a pHYs chunk with the real DPI.
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      const ihdrEnd = 8 + 4 + 4 + 13 + 4;
-      const pixelsPerMeter = Math.round(dpiValue / 0.0254);
-      const chunkBody = new Uint8Array(13);
-      chunkBody.set([0x70, 0x48, 0x59, 0x73], 0);
-      const bodyView = new DataView(chunkBody.buffer);
-      bodyView.setUint32(4, pixelsPerMeter);
-      bodyView.setUint32(8, pixelsPerMeter);
-      chunkBody[12] = 1;
-      const chunk = new Uint8Array(4 + chunkBody.length + 4);
-      const chunkView = new DataView(chunk.buffer);
-      chunkView.setUint32(0, 9);
-      chunk.set(chunkBody, 4);
-      chunkView.setUint32(4 + chunkBody.length, crc32(chunkBody));
-      const out = new Uint8Array(bytes.length + chunk.length);
-      out.set(bytes.subarray(0, ihdrEnd), 0);
-      out.set(chunk, ihdrEnd);
-      out.set(bytes.subarray(ihdrEnd), ihdrEnd + chunk.length);
-      return new Blob([out], { type: "image/png" });
-    }
-    function cleanupResultResidualDust() {
-      const power = Number(($("bgPower") as HTMLInputElement | null)?.value || 0);
-      if (power < 90) return;
-      const w = result.width,
-        h = result.height;
-      const imgd = rctx.getImageData(0, 0, w, h),
-        d = imgd.data;
-      const bg = sampledBgColor || sampleBorder() || { r: 0, g: 0, b: 0 };
-      const localPower = Math.min(200, power + 18);
-      const localTol = Number(($("colorTol") as HTMLInputElement | null)?.value || 48);
-      for (let i = 0; i < d.length; i += 4) {
-        if (d[i + 3] < 8) continue;
-        if (!residualBgCandidate(d[i], d[i + 1], d[i + 2], d[i + 3], bg, mode, localPower)) continue;
-        const L = lum(d[i], d[i + 1], d[i + 2]),
-          S = sat(d[i], d[i + 1], d[i + 2]),
-          mx = Math.max(d[i], d[i + 1], d[i + 2]);
-        const bgDist = dist(d[i], d[i + 1], d[i + 2], bg || { r: 0, g: 0, b: 0 });
-        let shouldRemove = false;
-        if (mode === "dark") shouldRemove = power >= 150 || L < 125 || mx < 155;
-        else if (mode === "light") shouldRemove = power >= 150 || L > 196 || (S < 0.2 && L > 182) || bgDist < 34;
-        else shouldRemove = power >= 150 || bgDist < localTol + 18 || (S < 0.16 && bgDist < localTol + 28);
-        if (shouldRemove) d[i + 3] = 0;
-      }
-      rctx.putImageData(imgd, 0, 0);
-    }
-
-    function restoreProtected() {
-      if (!protectEnabled || !protectedColors.length) return;
-      const w = clean.width,
-        h = clean.height;
-      const cleanData = cctx.getImageData(0, 0, w, h);
-      const out = rctx.getImageData(0, 0, w, h);
-      const cd = cleanData.data,
-        od = out.data;
-      for (let i = 0; i < cd.length; i += 4) {
-        if (cd[i + 3] && isProtected(cd[i], cd[i + 1], cd[i + 2])) {
-          od[i] = cd[i];
-          od[i + 1] = cd[i + 1];
-          od[i + 2] = cd[i + 2];
-          od[i + 3] = cd[i + 3];
-        }
-      }
-      rctx.putImageData(out, 0, 0);
-    }
-    // Sliding-window box blur (O(w*h) per pass) used to build a smooth alpha falloff grid.
-    function boxBlurPass(src: Float32Array, dst: Float32Array, w: number, h: number, r: number, horizontal: boolean) {
-      if (horizontal) {
-        for (let y = 0; y < h; y++) {
-          const row = y * w;
-          let sum = 0,
-            count = 0;
-          for (let x = 0; x <= Math.min(r, w - 1); x++) {
-            sum += src[row + x];
-            count++;
-          }
-          for (let x = 0; x < w; x++) {
-            dst[row + x] = sum / count;
-            const addX = x + r + 1,
-              remX = x - r;
-            if (addX < w) {
-              sum += src[row + addX];
-              count++;
-            }
-            if (remX >= 0) {
-              sum -= src[row + remX];
-              count--;
-            }
-          }
-        }
-      } else {
-        for (let x = 0; x < w; x++) {
-          let sum = 0,
-            count = 0;
-          for (let y = 0; y <= Math.min(r, h - 1); y++) {
-            sum += src[y * w + x];
-            count++;
-          }
-          for (let y = 0; y < h; y++) {
-            dst[y * w + x] = sum / count;
-            const addY = y + r + 1,
-              remY = y - r;
-            if (addY < h) {
-              sum += src[addY * w + x];
-              count++;
-            }
-            if (remY >= 0) {
-              sum -= src[remY * w + x];
-              count--;
-            }
-          }
-        }
-      }
-    }
-    // Builds a low-res, smoothly blurred alpha map so dots taper gradually near the artwork's
-    // silhouette edge (small near the border, growing towards the interior) instead of being
-    // clipped abruptly by the hard alpha mask.
-    function buildEdgeFeatherGrid(pixelAlpha: Uint8ClampedArray, w: number, h: number, cellPx: number) {
-      const ds = Math.max(2, Math.round(cellPx / 2));
-      const gw = Math.ceil(w / ds),
-        gh = Math.ceil(h / ds);
-      const grid = new Float32Array(gw * gh);
-      for (let gy = 0; gy < gh; gy++) {
-        for (let gx = 0; gx < gw; gx++) {
-          const sx = Math.min(w - 1, gx * ds + (ds >> 1)),
-            sy = Math.min(h - 1, gy * ds + (ds >> 1));
-          grid[gy * gw + gx] = pixelAlpha[(sy * w + sx) * 4 + 3] > 8 ? 1 : 0;
-        }
-      }
-      const tmp = new Float32Array(gw * gh);
-      const r = 3;
-      boxBlurPass(grid, tmp, gw, gh, r, true);
-      boxBlurPass(tmp, grid, gw, gh, r, false);
-      return { grid, gw, gh, ds };
-    }
-    function sampleEdgeFeather(feather: { grid: Float32Array; gw: number; gh: number; ds: number }, x: number, y: number) {
-      const gx = clamp(Math.floor(x / feather.ds), 0, feather.gw - 1),
-        gy = clamp(Math.floor(y / feather.ds), 0, feather.gh - 1);
-      return feather.grid[gy * feather.gw + gx];
-    }
-    function halftone() {
-      const w = clean.width,
-        h = clean.height;
-      const lpiVal = Number(($("lpi") as HTMLInputElement).value);
-      const cell = Math.max(1.1, dpi / lpiVal);
-      const gain = Number(($("gain") as HTMLInputElement).value);
-      const dotGain = Number(($("dotGain") as HTMLInputElement)?.value || 0) / 100;
-      const blackProtect = 0.92;
-      const angleDeg = Number(($("screenAngle") as HTMLInputElement).value);
-      const angle = (angleDeg * Math.PI) / 180;
-      const cos = Math.cos(angle),
-        sin = Math.sin(angle),
-        cx = w / 2,
-        cy = h / 2,
-        diag = Math.ceil(Math.hypot(w, h));
-      const cols = Math.ceil(diag / cell) + 4,
-        rows = Math.ceil(diag / cell) + 4;
-      const src = cctx.getImageData(0, 0, w, h).data;
-      const edgeFeather = buildEdgeFeatherGrid(src, w, h, cell);
-
-      // Supersampled (4x) anti-aliased dot tiles, cached per shape + quantized radius bucket.
-      // Rendering a fresh 4x tile and downscaling it per dot is far too slow for large/fine
-      // halftones (hundreds of thousands of cells), so we pre-render a small set of AA'd tiles
-      // once and reuse them; per-dot cost becomes a cheap same-size translation draw.
-      const SS = 4;
-      const tileNative = Math.max(8, Math.ceil((cell * 1.3 + 2) * 2));
-      const ssMinRadius = cell * 0.12;
-      const maxRadius = cell * 0.62;
-      const bucketSteps = 48;
-      const ssCanvas = document.createElement("canvas");
-      ssCanvas.width = tileNative * SS;
-      ssCanvas.height = tileNative * SS;
-      const ssCtx = ssCanvas.getContext("2d")!;
-      const tileCache = new Map<string, HTMLCanvasElement>();
-      function getDotTile(shape: ScreenShape, radius: number): HTMLCanvasElement {
-        const q = Math.max(1, Math.round((radius / maxRadius) * bucketSteps));
-        const key = shape + "_" + q;
-        let tile = tileCache.get(key);
-        if (!tile) {
-          const rq = (q / bucketSteps) * maxRadius;
-          ssCtx.setTransform(1, 0, 0, 1, 0, 0);
-          ssCtx.clearRect(0, 0, ssCanvas.width, ssCanvas.height);
-          ssCtx.setTransform(SS, 0, 0, SS, ssCanvas.width / 2, ssCanvas.height / 2);
-          drawShape(ssCtx, shape, 0, 0, rq, cell, angle);
-          tile = document.createElement("canvas");
-          tile.width = tileNative;
-          tile.height = tileNative;
-          const tileCtx = tile.getContext("2d")!;
-          tileCtx.imageSmoothingEnabled = true;
-          tileCtx.imageSmoothingQuality = "high";
-          tileCtx.drawImage(ssCanvas, 0, 0, tileNative, tileNative);
-          tileCache.set(key, tile);
-        }
-        return tile;
-      }
-
-      rctx.clearRect(0, 0, w, h);
-      rctx.drawImage(clean, 0, 0);
-
-      rctx.save();
-      rctx.globalCompositeOperation = "destination-out";
-      rctx.globalAlpha = 1;
-      rctx.imageSmoothingEnabled = true;
-      rctx.imageSmoothingQuality = "high";
-
-      for (let yy = -rows / 2; yy < rows / 2; yy++) {
-        for (let xx = -cols / 2; xx < cols / 2; xx++) {
-          const rx = xx * cell,
-            ry = yy * cell;
-          const px = cx + rx * cos - ry * sin,
-            py = cy + rx * sin + ry * cos;
-          if (px < -cell || py < -cell || px > w + cell || py > h + cell) continue;
-          const ix = clamp(Math.round(px), 0, w - 1),
-            iy = clamp(Math.round(py), 0, h - 1),
-            i = (iy * w + ix) * 4;
-          const a = src[i + 3] / 255;
-          if (a <= 0.02) continue;
-          const r = src[i],
-            g = src[i + 1],
-            b = src[i + 2];
-          if (isProtected(r, g, b)) continue;
-
-          const rawL = lum(r, g, b);
-          const L = applyLevels(rawL);
-          let amount = 1 - L / 255;
-
-          if (mode === "color" || mode === "light") {
-            const darkFactor = clamp((92 - rawL) / 92, 0, 1);
-            if (darkFactor > 0) amount *= Math.max(0.02, 1 - blackProtect * darkFactor);
-          }
-          amount = clamp(amount * gain, 0, 1) * a;
-          // Dot gain: simulates ink spreading on film/fabric, peaking at midtones and fading to
-          // zero at the extremes (0%/100%), exactly like real press dot gain.
-          if (dotGain !== 0) amount = clamp(amount + dotGain * Math.sin(Math.PI * amount), 0, 1);
-          const edgeFactor = sampleEdgeFeather(edgeFeather, ix, iy);
-          const radius = cell * 0.62 * Math.sqrt(amount) * edgeFactor;
-          if (radius < 0.18) continue;
-
-          const shape = mixEnabled && cellHash(Math.round(xx * 2), Math.round(yy * 2)) < mixAmount / 100 ? mixScreenType : screenType;
-          if (radius >= ssMinRadius) {
-            const tile = getDotTile(shape, radius);
-            rctx.drawImage(tile, px - tileNative / 2, py - tileNative / 2);
-          } else {
-            drawShape(rctx, shape, px, py, radius, cell, angle);
-          }
-        }
-      }
-      rctx.restore();
-
-      hardenAlpha(result);
-
-      cleanupResultResidualDust();
-      cleanupResultColorSpill();
-      cleanupResultColorContaminationGlobal();
-      restoreProtected();
-      adjust(result);
-    }
-
-    function buildHalftoneSettingsFromUI(): HalftoneSettings {
-      return {
-        ...DEFAULT_HALFTONE_SETTINGS,
-        dpi,
-        lpi: Number(($("lpi") as HTMLInputElement).value),
-        angle: Number(($("screenAngle") as HTMLInputElement).value),
-        algorithm,
-        dotShape: screenType,
-        gamma: Number(($("gamma") as HTMLInputElement).value),
-        blackPoint: Number(($("blackPoint") as HTMLInputElement).value),
-        whitePoint: Number(($("whitePoint") as HTMLInputElement).value),
-        dotGain: Number(($("dotGain") as HTMLInputElement)?.value || 0) / 100,
-        gain: Number(($("gain") as HTMLInputElement).value),
-        whiteMode,
-        whiteDensity,
-        whiteChoke,
-        whiteLpi,
-        whiteAngle,
-        whiteDotShape,
-        whiteAlgorithm,
-        whiteGamma,
-      };
-    }
-
-    // Real AM/FM/Hybrid + White Underbase pipeline. Color layer is still generated by
-    // "punching" dots out of the clean (bg-removed) art, exactly like the legacy pipeline,
-    // so all the existing cleanup/color-spill/protect passes below keep working unchanged.
-    // The white channel is a genuinely separate Float32Array-derived layer (never alpha).
-    function halftonePro() {
-      const w = clean.width,
-        h = clean.height;
-      if (!w || !h) return;
-      const settings = buildHalftoneSettingsFromUI();
-      const check = validateDpiLpi(settings.dpi, settings.lpi);
-      if (!check.ok && check.message) setStatus(check.message);
-
-      const imgd = cctx.getImageData(0, 0, w, h);
-      const layers = runHalftoneEngine(imgd.data, w, h, settings, { isProtected });
-
-      const colorCellPx = Math.max(1.1, settings.dpi / settings.lpi);
-      const colorAngleRad = (settings.angle * Math.PI) / 180;
-      const colorCanvas = renderColorLayer(clean, layers.colorDots, colorCellPx, colorAngleRad);
-      rctx.clearRect(0, 0, w, h);
-      rctx.drawImage(colorCanvas, 0, 0);
-
-      if (settings.whiteMode !== "none") {
-        const whiteCellPx = Math.max(1.1, settings.dpi / settings.whiteLpi);
-        const whiteAngleRad = (settings.whiteAngle * Math.PI) / 180;
-        whiteLayerCanvas = renderWhiteLayer(w, h, layers.whiteDots, layers.whiteSolidCoverage, whiteCellPx, whiteAngleRad);
-      } else {
-        whiteLayerCanvas = null;
-      }
-
-      // No hardenAlpha() here on purpose: the pro pipeline keeps intermediate alpha as a
-      // continuous 0..1 value (avoids premature binarization); export still binarizes at
-      // the very end, matching the legacy engine's final output.
-      cleanupResultResidualDust();
-      cleanupResultColorSpill();
-      cleanupResultColorContaminationGlobal();
-      restoreProtected();
-      adjust(result);
-    }
-
-    // --- PASSO 6G: Pro CMYK (RGBA -> buildPrintLayerSet -> PrintLayerSet -> composePrintPreview) ---
-    // Independent from halftonePro()/halftone() above: never runs alongside them (process()
-    // dispatches to exactly one engine), never calls separateRgbToCmyk() from the pro-rgb path,
-    // and never touches am.ts/fm.ts/hybrid.ts/separation.ts/screening.ts/white.ts/choke.ts.
+    // --- Halftone PRO (RGBA -> buildPrintLayerSet -> PrintLayerSet -> composePrintPreview) ---
+    // This is the ONLY processing pipeline used by this component. It never touches
+    // am.ts/fm.ts/hybrid.ts/separation.ts/screening.ts/white.ts/choke.ts math.
     function buildCmykChannelSettingsFromUI(key: CmykChannelKey): ChannelScreenSettings {
       const base = DEFAULT_CMYK_SCREEN_SETTINGS[key];
       return {
@@ -1455,16 +897,18 @@ export default function HalftoneStudio() {
       const w = clean.width,
         h = clean.height;
       if (!w || !h) return;
+      // Saturation/Contrast are applied to the bg-removed input BEFORE CMYK separation — this is
+      // the only place they can affect the actual exported PrintLayerSet (the CMYK math itself is
+      // never modified).
+      adjust(clean);
       const settings = buildPrintEngineSettingsFromUI();
       const imgd = cctx.getImageData(0, 0, w, h);
       cmykLastLayers = buildPrintLayerSet(imgd.data, w, h, settings);
-      whiteLayerCanvas = null; // Pro CMYK's White lives inside PrintLayerSet.white, not the Pro RGB whiteLayerCanvas.
       renderCmykPreviewToResult();
     }
 
     function render() {
-      const composedPreview = !showBefore && engineMode === "pro" && previewMode !== "color" && whiteLayerCanvas ? composeDtfPreview(result, whiteLayerCanvas, previewMode) : null;
-      const srcFull = showBefore ? original : composedPreview || result;
+      const srcFull = showBefore ? original : result;
       $("badge").textContent = showBefore ? "Antes / original" : "Depois / resultado";
       let src: HTMLCanvasElement = srcFull;
       if (!showBefore && fillFrame && srcFull.width && srcFull.height) {
@@ -1517,11 +961,8 @@ export default function HalftoneStudio() {
     async function process() {
       if (!img) return;
       pickingBg = false;
-      pickingProtect = false;
       const pickBgBtn = container.querySelector("#pickBgBtn");
-      const pickProtect = container.querySelector("#pickProtect");
       if (pickBgBtn) pickBgBtn.classList.remove("on");
-      if (pickProtect) pickProtect.classList.remove("on");
       updatePickCursor();
       labels();
       loading(true, "Processando...");
@@ -1535,9 +976,7 @@ export default function HalftoneStudio() {
       octx.drawImage(img, 0, 0, w, h);
       if (mode === "color" && !manualBgColor) detectBorderColor(false);
       removeBg();
-      if (engineMode === "pro-cmyk") halftoneProCmyk();
-      else if (engineMode === "pro") halftonePro();
-      else halftone();
+      halftoneProCmyk();
       showBefore = false;
       render();
       fit();
@@ -1606,15 +1045,17 @@ export default function HalftoneStudio() {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 15000);
     }
-    async function saveCmykExport() {
+    async function save() {
+      if (isExporting) return;
       if (!cmykLastLayers) {
-        setStatus("Gere o halftone Pro CMYK antes de baixar.");
+        setStatus("Clique em \"Gerar halftone\" antes de baixar.");
         return;
       }
+      isExporting = true;
       const btn = $<HTMLButtonElement>("saveBtn");
       const oldText = btn.textContent;
       btn.disabled = true;
-      btn.textContent = "Gerando PNG final...";
+      btn.textContent = "Preparando PNG...";
       setStatus("Compondo White + CMYK + Alpha em PNG final 300 DPI...");
       try {
         const baseName = imgName.replace(/\.(png|jpg|jpeg|webp)$/i, "");
@@ -1625,126 +1066,10 @@ export default function HalftoneStudio() {
         console.error(err);
         setStatus("Erro ao exportar PNG final DTF.");
       } finally {
+        isExporting = false;
         btn.disabled = false;
         btn.textContent = oldText;
       }
-    }
-    async function save() {
-      if (engineMode === "pro-cmyk") {
-        await saveCmykExport();
-        return;
-      }
-      if (!result.width || !result.height) {
-        setStatus("Gere o halftone antes de baixar.");
-        return;
-      }
-      const btn = $<HTMLButtonElement>("saveBtn");
-      const oldText = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = "Preparando PNG...";
-      setStatus("Preparando arquivo para download...");
-      const baseName = imgName.replace(/\.(png|jpg|jpeg|webp)$/i, "");
-      const filename = baseName + `-halftone-dtf-${mode}.png`;
-      try {
-        const bounds = fillFrame ? computeContentBounds(result) : null;
-        function cropTo(src: HTMLCanvasElement): HTMLCanvasElement {
-          if (!bounds || (bounds.x === 0 && bounds.y === 0 && bounds.width === src.width && bounds.height === src.height)) return src;
-          const cropped = document.createElement("canvas");
-          cropped.width = bounds.width;
-          cropped.height = bounds.height;
-          const cropCtx = cropped.getContext("2d")!;
-          cropCtx.imageSmoothingEnabled = false;
-          cropCtx.drawImage(src, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
-          return cropped;
-        }
-        // IMPORTANT: color and white are cropped with the exact same `bounds` so both files
-        // stay pixel-registered with each other for print alignment on press.
-        const exportCanvas = cropTo(result);
-        binarizeAlpha(exportCanvas);
-        const useWhiteExport = engineMode === "pro" && whiteMode !== "none" && !!whiteLayerCanvas;
-
-        if (useWhiteExport) {
-          const whiteExportCanvas = cropTo(whiteLayerCanvas!);
-          const { colorBlob, colorFilename, whiteBlob, whiteFilename } = await exportDtfLayers(baseName + `-halftone-dtf-${mode}`, dpi, exportCanvas, whiteExportCanvas);
-          const downloadBlob = (blob: Blob, name: string) => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = name;
-            a.style.display = "none";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 15000);
-          };
-          downloadBlob(colorBlob, colorFilename);
-          if (whiteBlob && whiteFilename) downloadBlob(whiteBlob, whiteFilename);
-          setStatus("Download iniciado (arquivo de cor + branco). Verifique a pasta de downloads.");
-          return;
-        }
-
-        let blob = await new Promise<Blob>((resolve, reject) => {
-          exportCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Não foi possível gerar o PNG."))), "image/png", 1);
-        });
-        blob = await embedPngDpi(blob, dpi);
-        const file = new File([blob], filename, { type: "image/png" });
-        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-        const nav = navigator as Navigator & { canShare?: (data: { files: File[] }) => boolean; share?: (data: { files: File[]; title?: string; text?: string }) => Promise<void> };
-        if (isMobile && nav.canShare && nav.share && nav.canShare({ files: [file] })) {
-          try {
-            await nav.share({ files: [file], title: "Halftone Studio", text: "Sua arte em halftone está pronta." });
-            setStatus("PNG gerado. Escolha onde salvar ou compartilhar.");
-            return;
-          } catch (err) {
-            if (err && (err as { name?: string }).name === "AbortError") {
-              setStatus("Download cancelado.");
-              return;
-            }
-          }
-        }
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.style.display = "none";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 15000);
-        setStatus("Download iniciado. Verifique a pasta de downloads.");
-      } catch (err) {
-        console.error(err);
-        setStatus("Não foi possível baixar. Tente novamente ou use outro navegador.");
-        alert("Não foi possível gerar o PNG neste navegador. Tente novamente pelo Chrome ou use a opção de compartilhar/salvar do celular.");
-      } finally {
-        btn.disabled = false;
-        btn.textContent = oldText;
-      }
-    }
-    function drawSwatches() {
-      const box = $("protectSwatches");
-      box.innerHTML = "";
-      protectedColors.forEach((c, idx) => {
-        const el = document.createElement("div");
-        el.className = "pswatch";
-        el.style.background = hex(c);
-        el.title = hex(c);
-        const x = document.createElement("button");
-        x.textContent = "×";
-        x.onclick = () => {
-          protectedColors.splice(idx, 1);
-          drawSwatches();
-          process();
-        };
-        el.appendChild(x);
-        box.appendChild(el);
-      });
-    }
-    function addProtect(c: { r: number; g: number; b: number }) {
-      if (protectedColors.length >= 5) protectedColors.shift();
-      protectedColors.push(c);
-      drawSwatches();
-      process();
     }
     function mapClickToPixel(e: MouseEvent) {
       const rect = viewCanvas.getBoundingClientRect();
@@ -1814,23 +1139,11 @@ export default function HalftoneStudio() {
     function collectPreset(): HalftonePreset {
       return {
         mode,
-        screenType,
-        mixEnabled,
-        mixScreenType,
-        mixAmount,
-        lpi: Number(($("lpi") as HTMLInputElement).value),
-        screenAngle: Number(($("screenAngle") as HTMLInputElement).value),
-        blackPoint: Number(($("blackPoint") as HTMLInputElement).value),
-        whitePoint: Number(($("whitePoint") as HTMLInputElement).value),
-        gamma: Number(($("gamma") as HTMLInputElement).value),
-        gain: Number(($("gain") as HTMLInputElement).value),
-        dotGain: Number(($("dotGain") as HTMLInputElement).value),
         removePower: Number(($("removePower") as HTMLInputElement).value),
         bgPower: Number(($("bgPower") as HTMLInputElement).value),
         colorResidual: Number(($("colorResidual") as HTMLInputElement).value),
         saturation: Number(($("saturation") as HTMLInputElement).value),
         contrast: Number(($("contrast") as HTMLInputElement).value),
-        protectTol: Number(($("protectTol") as HTMLInputElement).value),
         colorTol: Number(($("colorTol") as HTMLInputElement).value),
         dpi,
         fillFrame,
@@ -1840,29 +1153,11 @@ export default function HalftoneStudio() {
     function applyPreset(p: HalftonePreset) {
       mode = p.mode;
       container.querySelectorAll<HTMLButtonElement>(".mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === p.mode));
-      screenType = p.screenType;
-      container.querySelectorAll<HTMLButtonElement>("#screenChips .chip").forEach((b) => b.classList.toggle("active", b.dataset.screen === p.screenType));
-      mixScreenType = p.mixScreenType;
-      container.querySelectorAll<HTMLButtonElement>("#screenChips2 .chip").forEach((b) => b.classList.toggle("active", b.dataset.screen === p.mixScreenType));
-      mixEnabled = p.mixEnabled;
-      $("mixToggle").textContent = "Mesclar retículas: " + (mixEnabled ? "Ativado" : "Desativado");
-      $("mixToggle").classList.toggle("hot", mixEnabled);
-      $("mixWrap").style.display = mixEnabled ? "block" : "none";
-      mixAmount = p.mixAmount;
-      ($("mixAmount") as HTMLInputElement).value = String(p.mixAmount);
-      ($("lpi") as HTMLInputElement).value = String(p.lpi);
-      ($("screenAngle") as HTMLInputElement).value = String(p.screenAngle);
-      ($("blackPoint") as HTMLInputElement).value = String(p.blackPoint);
-      ($("whitePoint") as HTMLInputElement).value = String(p.whitePoint);
-      ($("gamma") as HTMLInputElement).value = String(p.gamma);
-      ($("gain") as HTMLInputElement).value = String(p.gain);
-      ($("dotGain") as HTMLInputElement).value = String(p.dotGain ?? 0);
       ($("removePower") as HTMLInputElement).value = String(p.removePower);
       ($("bgPower") as HTMLInputElement).value = String(p.bgPower);
       ($("colorResidual") as HTMLInputElement).value = String(p.colorResidual);
       ($("saturation") as HTMLInputElement).value = String(p.saturation);
       ($("contrast") as HTMLInputElement).value = String(p.contrast);
-      ($("protectTol") as HTMLInputElement).value = String(p.protectTol);
       ($("colorTol") as HTMLInputElement).value = String(p.colorTol);
       const beforePx = img ? getCustomPx() : null;
       container.querySelectorAll<HTMLButtonElement>("#dpiChips .chip").forEach((b) => b.classList.toggle("active", Number(b.dataset.dpi) === p.dpi));
@@ -1874,44 +1169,6 @@ export default function HalftoneStudio() {
       ($("removeHalo") as HTMLInputElement).checked = p.removeHalo;
       if (mode === "color" && !manualBgColor) detectBorderColor(false);
       updateFileMeta();
-      labels();
-      process();
-    }
-    function applyDtfProPreset(name: string) {
-      const p: HalftoneSettings = resolvePreset(name);
-      setEngineMode("pro");
-      container.querySelectorAll("#engineChips .chip").forEach((b) => b.classList.toggle("active", (b as HTMLElement).dataset.engine === "pro"));
-      algorithm = p.algorithm;
-      container.querySelectorAll("#algoChips .chip").forEach((b) => b.classList.toggle("active", (b as HTMLElement).dataset.algo === p.algorithm));
-      screenType = p.dotShape;
-      container.querySelectorAll("#screenChips .chip").forEach((b) => b.classList.toggle("active", (b as HTMLElement).dataset.screen === p.dotShape));
-      ($("lpi") as HTMLInputElement).value = String(p.lpi);
-      ($("screenAngle") as HTMLInputElement).value = String(p.angle);
-      ($("gamma") as HTMLInputElement).value = String(p.gamma);
-      ($("blackPoint") as HTMLInputElement).value = String(p.blackPoint);
-      ($("whitePoint") as HTMLInputElement).value = String(p.whitePoint);
-      ($("dotGain") as HTMLInputElement).value = String(Math.round(p.dotGain * 100));
-      ($("gain") as HTMLInputElement).value = String(p.gain);
-
-      whiteMode = p.whiteMode;
-      container.querySelectorAll("#whiteModeChips .chip").forEach((b) => b.classList.toggle("active", (b as HTMLElement).dataset.white === p.whiteMode));
-      $("whiteWrap").style.display = whiteMode === "none" ? "none" : "block";
-      $("whiteHalftoneWrap").style.display = whiteMode === "halftone" ? "block" : "none";
-      whiteAlgorithm = p.whiteAlgorithm;
-      container.querySelectorAll("#whiteAlgoChips .chip").forEach((b) => b.classList.toggle("active", (b as HTMLElement).dataset.whitealgo === p.whiteAlgorithm));
-      whiteDotShape = p.whiteDotShape;
-      container.querySelectorAll("#whiteShapeChips .chip").forEach((b) => b.classList.toggle("active", (b as HTMLElement).dataset.whiteshape === p.whiteDotShape));
-      whiteDensity = p.whiteDensity;
-      ($("whiteDensity") as HTMLInputElement).value = String(Math.round(p.whiteDensity * 100));
-      whiteChoke = p.whiteChoke;
-      ($("whiteChoke") as HTMLInputElement).value = String(p.whiteChoke);
-      whiteLpi = p.whiteLpi;
-      ($("whiteLpi") as HTMLInputElement).value = String(p.whiteLpi);
-      whiteAngle = p.whiteAngle;
-      ($("whiteAngle") as HTMLInputElement).value = String(p.whiteAngle);
-      whiteGamma = p.whiteGamma;
-      ($("whiteGamma") as HTMLInputElement).value = String(p.whiteGamma);
-
       labels();
       process();
     }
@@ -2065,30 +1322,6 @@ export default function HalftoneStudio() {
         process();
       })
     );
-    container.querySelectorAll<HTMLButtonElement>("#screenChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#screenChips .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        screenType = b.dataset.screen as ScreenShape;
-        process();
-      })
-    );
-    container.querySelectorAll<HTMLButtonElement>("#screenChips2 .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#screenChips2 .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        mixScreenType = b.dataset.screen as ScreenShape;
-        process();
-      })
-    );
-    container.querySelectorAll<HTMLButtonElement>("#engineChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#engineChips .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        setEngineMode(((b.dataset.engine as EngineMode) || "pro"));
-        process();
-      })
-    );
     CMYK_CHANNELS.forEach(({ key }) => {
       const lpiEl = container.querySelector<HTMLInputElement>(`#${key}Lpi`);
       const angleEl = container.querySelector<HTMLInputElement>(`#${key}Angle`);
@@ -2118,14 +1351,6 @@ export default function HalftoneStudio() {
         cmykPreviewMode = (b.dataset.cmykpreview as CmykPreviewMode) || "composite";
         renderCmykPreviewToResult();
         render();
-      })
-    );
-    container.querySelectorAll<HTMLButtonElement>("#algoChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#algoChips .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        algorithm = (b.dataset.algo as HalftoneAlgorithm) || "am";
-        process();
       })
     );
     container.querySelectorAll<HTMLButtonElement>("#whiteModeChips .chip").forEach((b) =>
@@ -2179,32 +1404,7 @@ export default function HalftoneStudio() {
       labels();
     });
     $("whiteGamma").addEventListener("change", process);
-    container.querySelectorAll<HTMLButtonElement>("#previewModeChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#previewModeChips .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        previewMode = (b.dataset.preview as PreviewMode) || "color";
-        render();
-      })
-    );
-    container.querySelectorAll<HTMLButtonElement>("#dtfProPresetChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        const name = b.dataset.dtfpreset;
-        if (name) applyDtfProPreset(name);
-      })
-    );    $("mixToggle").addEventListener("click", () => {
-      mixEnabled = !mixEnabled;
-      $("mixToggle").textContent = "Mesclar retículas: " + (mixEnabled ? "Ativado" : "Desativado");
-      $("mixToggle").classList.toggle("hot", mixEnabled);
-      $("mixWrap").style.display = mixEnabled ? "block" : "none";
-      process();
-    });
-    $("mixAmount").addEventListener("input", () => {
-      mixAmount = Number(($("mixAmount") as HTMLInputElement).value);
-      labels();
-    });
-    $("mixAmount").addEventListener("change", process);
-    ["gain", "dotGain", "removePower", "bgPower", "colorResidual", "saturation", "contrast", "protectTol", "colorTol", "lpi", "screenAngle", "blackPoint", "whitePoint", "gamma"].forEach((id) => {
+    ["removePower", "bgPower", "colorResidual", "saturation", "contrast", "colorTol"].forEach((id) => {
       const el = container.querySelector<HTMLInputElement>("#" + id);
       if (!el) return;
       el.addEventListener("input", labels);
@@ -2252,7 +1452,7 @@ export default function HalftoneStudio() {
     function canDragPreview(e: PointerEvent) {
       if (!result.width) return false;
       if (e.button !== 0) return false;
-      if (pickingBg || pickingProtect) return false;
+      if (pickingBg) return false;
       if ((e.target as HTMLElement).closest("button,input,label,select")) return false;
       return true;
     }
@@ -2344,47 +1544,20 @@ export default function HalftoneStudio() {
         render();
       }
     });
-    $("protectToggle").addEventListener("click", () => {
-      protectEnabled = !protectEnabled;
-      $("protectToggle").textContent = protectEnabled ? "Ativado" : "Desativado";
-      $("protectToggle").classList.toggle("hot", protectEnabled);
-      process();
-    });
-    $("pickProtect").addEventListener("click", () => {
-      pickingBg = false;
-      $("pickBgBtn").classList.remove("on");
-      pickingProtect = !pickingProtect;
-      $("pickProtect").classList.toggle("on", pickingProtect);
-      updatePickCursor();
-      setStatus(pickingProtect ? "Conta-gotas ativo: clique numa cor da imagem para manter lisa." : "Pronto.");
-    });
-    $("addWhite").addEventListener("click", () => addProtect({ r: 255, g: 255, b: 255 }));
-    $("clearProtect").addEventListener("click", () => {
-      protectedColors = [];
-      drawSwatches();
-      process();
-    });
     const onCanvasClick = (e: MouseEvent) => {
       if (dragMoved) {
         dragMoved = false;
         return;
       }
       if (!img) return;
+      if (!pickingBg) return;
       const c = mapClickToPixel(e);
-      if (pickingBg) {
-        setBgColor(c, true);
-        pickingBg = false;
-        $("pickBgBtn").classList.remove("on");
-        updatePickCursor();
-        setStatus("Cor do fundo selecionada: " + hex(sampledBgColor));
-        process();
-        return;
-      }
-      if (!pickingProtect) return;
-      addProtect(c);
-      pickingProtect = false;
-      $("pickProtect").classList.remove("on");
+      setBgColor(c, true);
+      pickingBg = false;
+      $("pickBgBtn").classList.remove("on");
       updatePickCursor();
+      setStatus("Cor do fundo selecionada: " + hex(sampledBgColor));
+      process();
     };
     viewCanvas.addEventListener("click", onCanvasClick);
 
@@ -2442,33 +1615,6 @@ export default function HalftoneStudio() {
           <div className="filebox">
             <b id="fileName">Nenhuma imagem carregada</b>
             <span id="fileMeta">Carregue uma imagem para começar.</span>
-          </div>
-
-          <div className="section">
-            <div className="sectionTitle">Presets DTF (Pro)</div>
-            <div className="dica">
-              <b>Dica:</b> aplica configurações prontas do motor Pro (algoritmo, LPI e White Underbase). Independente dos presets salvos abaixo.
-            </div>
-            <div className="chips" id="dtfProPresetChips">
-              <button className="chip" data-dtfpreset="DTF Standard">
-                Standard
-              </button>
-              <button className="chip" data-dtfpreset="DTF Detail">
-                Detail
-              </button>
-              <button className="chip" data-dtfpreset="DTF Soft">
-                Soft
-              </button>
-              <button className="chip" data-dtfpreset="DTF Strong">
-                Strong
-              </button>
-              <button className="chip" data-dtfpreset="DTF White Solid">
-                White Solid
-              </button>
-              <button className="chip" data-dtfpreset="DTF White Halftone">
-                White Halftone
-              </button>
-            </div>
           </div>
 
           <div className="section">
@@ -2582,23 +1728,12 @@ export default function HalftoneStudio() {
           <div className="section">
             <div className="sectionTitle">Motor de halftone</div>
             <div className="dica">
-              <b>Dica:</b> Pro usa retícula real AM/FM/Hybrid e White Underbase separado. Legado mantém o motor antigo como alternativa. Pro CMYK separa C/M/Y/K de forma independente (opcional).
-            </div>
-            <div className="chips" id="engineChips">
-              <button className="chip active" data-engine="pro">
-                Pro (novo)
-              </button>
-              <button className="chip" data-engine="legacy">
-                Legado
-              </button>
-              <button className="chip" data-engine="pro-cmyk">
-                Pro CMYK
-              </button>
+              <b>Halftone PRO.</b> Reticula real AM/FM/Hybrid, CMYK independente e White Underbase separado — único motor desta interface.
             </div>
           </div>
 
-          <div className="section" id="proCmykSection" style={{ display: "none" }}>
-            <div className="sectionTitle">Pro CMYK — pipeline</div>
+          <div className="section" id="proCmykSection">
+            <div className="sectionTitle">CMYK independente</div>
             <div className="dica">
               <b>CMYK + White Underbase.</b> Preview CMYK — aproximação visual (não é uma simulação física da impressão/RIP).
             </div>
@@ -2639,25 +1774,7 @@ export default function HalftoneStudio() {
               <button className="chip" data-cmykpreview="white">W</button>
             </div>
             <div className="dica" style={{ marginTop: 8 }}>
-              <b>Exportação:</b> a exportação CMYK será habilitada na próxima etapa. White reutiliza os controles de White Underbase abaixo.
-            </div>
-          </div>
-
-          <div className="section">
-            <div className="sectionTitle">Algoritmo</div>
-            <div className="dica">
-              <b>Dica:</b> AM (amplitude) é a retícula clássica. FM (estocástica) preserva detalhe fino. Hybrid combina os dois.
-            </div>
-            <div className="chips" id="algoChips">
-              <button className="chip active" data-algo="am">
-                AM
-              </button>
-              <button className="chip" data-algo="fm">
-                FM
-              </button>
-              <button className="chip" data-algo="hybrid">
-                Hybrid
-              </button>
+              <b>Exportação:</b> PNG final DTF (White + CMYK + Alpha) em 300 DPI, pronto para impressão.
             </div>
           </div>
 
@@ -2676,115 +1793,6 @@ export default function HalftoneStudio() {
               <button className="chip" data-dpi="1200">
                 1200
               </button>
-            </div>
-          </div>
-
-          <div className="section">
-            <div className="row">
-              <label>Frequência (LPI)</label>
-              <span className="val" id="lpiVal">32</span>
-            </div>
-            <input id="lpi" type="range" min={10} max={85} defaultValue={32} step={1} />
-            <div className="dica">
-              <b>Dica:</b> valores menores deixam os pontos maiores. Valores maiores deixam o halftone mais fino.
-            </div>
-            <div className="dica" id="lpiFmNote" style={{ display: "none" }}>
-              <b>FM ativo:</b> o LPI não é utilizado neste modo — a densidade dos pontos é controlada pela matemática do FM (micro pitch), não por uma grade de frequência fixa.
-            </div>
-          </div>
-
-          <div className="section">
-            <div className="row">
-              <label>Ângulo</label>
-              <span className="val" id="angleVal">22.5°</span>
-            </div>
-            <input id="screenAngle" type="range" min={0} max={90} defaultValue={22.5} step={0.5} />
-            <div className="dica">
-              <b>Dica:</b> gira a grade da retícula. 22,5° é o ângulo clássico usado na impressão.
-            </div>
-          </div>
-
-          <div className="section">
-            <div className="sectionTitle">Tipo de retícula</div>
-            <div className="dica">
-              <b>Dica:</b> Round é o padrão para DTF. Diamond, Square, Elipse, Line e Rosette dão efeitos gráficos diferentes.
-            </div>
-            <div className="chips" id="screenChips">
-              <button className="chip active" data-screen="round">
-                Round (Photoshop)
-              </button>
-              <button className="chip" data-screen="diamond">
-                Diamond
-              </button>
-              <button className="chip" data-screen="square">
-                Square
-              </button>
-              <button className="chip" data-screen="ellipse">
-                Elipse
-              </button>
-              <button className="chip" data-screen="line">
-                Line
-              </button>
-              <button className="chip" data-screen="rosette">
-                Rosette (Photoshop)
-              </button>
-            </div>
-            <div className="protectTop" style={{ marginTop: 10 }}>
-              <button id="mixToggle" className="smallBtn" title="Mescla dois tipos de retícula na mesma arte.">
-                Mesclar retículas: Desativado
-              </button>
-            </div>
-            <div id="mixWrap" style={{ display: "none", marginTop: 10 }}>
-              <div className="chips" id="screenChips2">
-                <button className="chip" data-screen="round">
-                  Round (Photoshop)
-                </button>
-                <button className="chip" data-screen="diamond">
-                  Diamond
-                </button>
-                <button className="chip" data-screen="square">
-                  Square
-                </button>
-                <button className="chip" data-screen="ellipse">
-                  Elipse
-                </button>
-                <button className="chip active" data-screen="line">
-                  Line
-                </button>
-                <button className="chip" data-screen="rosette">
-                  Rosette (Photoshop)
-                </button>
-              </div>
-              <div className="row" style={{ marginTop: 10 }}>
-                <label>Intensidade da mescla</label>
-                <span className="val" id="mixVal">35</span>
-              </div>
-              <input id="mixAmount" type="range" min={0} max={100} defaultValue={35} step={1} />
-              <div className="dica">
-                <b>Dica:</b> controla a proporção entre a retícula principal e a secundária, célula a célula.
-              </div>
-            </div>
-          </div>
-
-          <div className="section">
-            <div className="sectionTitle">Tons do halftone</div>
-            <div className="row">
-              <label>Ponto preto</label>
-              <span className="val" id="blackPointVal">16</span>
-            </div>
-            <input id="blackPoint" type="range" min={0} max={254} defaultValue={16} step={1} />
-            <div className="row" style={{ marginTop: 10 }}>
-              <label>Ponto branco</label>
-              <span className="val" id="whitePointVal">110</span>
-            </div>
-            <input id="whitePoint" type="range" min={1} max={255} defaultValue={110} step={1} />
-            <div className="row" style={{ marginTop: 10 }}>
-              <label>Gamma</label>
-              <span className="val" id="gammaVal">1.8</span>
-            </div>
-            <input id="gamma" type="range" min={0.1} max={3} defaultValue={1.8} step={0.1} />
-            <div className="dica">
-              <b>Dica:</b> ajusta como os tons da imagem viram pontos, do sombreado (preto) ao realce (branco), antes de aplicar o halftone.
             </div>
           </div>
 
@@ -2874,26 +1882,6 @@ export default function HalftoneStudio() {
 
           <div className="section">
             <div className="row">
-              <label>Força do ponto</label>
-              <span className="val" id="gainVal">1.00</span>
-            </div>
-            <input id="gain" type="range" min={0.55} max={1.8} defaultValue={1} step={0.05} />
-            <div className="dica">
-              <b>Dica:</b> aumente para deixar os pontos mais fortes. Diminua para um resultado mais suave.
-            </div>
-          </div>
-          <div className="section">
-            <div className="row">
-              <label>Ganho de ponto (Dot Gain)</label>
-              <span className="val" id="dotGainVal">0%</span>
-            </div>
-            <input id="dotGain" type="range" min={-40} max={40} defaultValue={0} step={1} />
-            <div className="dica">
-              <b>Dica:</b> simula a expansão da tinta no filme/tecido. Positivo faz os pontos crescerem nos meios-tons (compensa perda de detalhe na prensa). Negativo encolhe os pontos.
-            </div>
-          </div>
-          <div className="section">
-            <div className="row">
               <label>Limpeza da borda</label>
               <span className="val" id="removeVal">50</span>
             </div>
@@ -2970,36 +1958,9 @@ export default function HalftoneStudio() {
             </div>
           </div>
 
-          <div className="section">
-            <div className="sectionTitle">Cores lisas</div>
-            <div className="protectTop">
-              <button id="protectToggle" className="smallBtn hot" title="Liga ou desliga a proteção das cores lisas.">
-                Ativado
-              </button>
-              <button id="pickProtect" className="smallBtn" title="Escolha uma cor da imagem para ficar lisa, sem receber pontos de halftone.">
-                Conta-gotas
-              </button>
-              <button id="addWhite" className="smallBtn" title="Mantém as partes brancas lisas, sem halftone.">
-                Adicionar branco
-              </button>
-              <button id="clearProtect" className="smallBtn">
-                Limpar cores
-              </button>
-            </div>
-            <div className="row" style={{ marginTop: 10 }}>
-              <label>Variação</label>
-              <span className="val" id="protectTolVal">26</span>
-            </div>
-            <input id="protectTol" type="range" min={2} max={90} defaultValue={26} step={1} />
-            <div className="swatches" id="protectSwatches" style={{ marginTop: 10 }} />
-            <div className="dica">
-              <b>Dica:</b> use para manter branco, preto ou outra cor lisa sem receber pontos.
-            </div>
-          </div>
-
           <div className="actions">
             <button id="processBtn" className="primary">Gerar halftone</button>
-            <button id="saveBtn" className="secondary">Baixar PNG</button>
+            <button id="saveBtn" className="secondary">Baixar PNG (300 DPI)</button>
           </div>
         </aside>
 
@@ -3022,17 +1983,6 @@ export default function HalftoneStudio() {
                 <input id="customBg" type="color" defaultValue="#211136" />
               </div>
               <button id="beforeBtn" className="toolbtn">Ver antes</button>
-              <div className="chips" id="previewModeChips">
-                <button className="chip active" data-preview="color">
-                  Cor
-                </button>
-                <button className="chip" data-preview="white">
-                  Branco
-                </button>
-                <button className="chip" data-preview="composite">
-                  Composto
-                </button>
-              </div>
               <button id="fitBtn" className="toolbtn">Ajustar</button>
               <div className="zoomBox">
                 <label>Zoom</label>
