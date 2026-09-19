@@ -2,21 +2,18 @@
 
 import { useEffect, useRef } from "react";
 import "../app/halftone-studio.css";
-import { DEFAULT_HALFTONE_SETTINGS, type HalftoneAlgorithm, type WhiteMode } from "../lib/halftone";
-// PASSO 7B — Halftone PRO is now the ONLY engine exposed by this component. It always runs the
-// CMYK+White pipeline below (buildPrintLayerSet/composePrintPreview/exportFinalDtfPng). The former
-// Legacy and Pro-RGB (single-channel dot-punch) pipelines have been removed; math in dtf/engine.ts,
-// dtf/compose.ts, dtf/export.ts and lib/halftone/* is untouched.
-import { resolveRealtimePrintEngine } from "../lib/dtf/realtime-engine";
-import { initRealtimeWasmBridge } from "../lib/dtf/wasm-runtime";
-import { composePrintPreview, paintDots, paintCoverageGrid, CHANNEL_COLORS, type RasterBuffer } from "../lib/dtf/compose";
-import type { PrintEngineSettings, PrintLayerSet } from "../lib/dtf/types";
-import { DEFAULT_COLOR_SEPARATION_SETTINGS } from "../lib/color/separation";
-import { DEFAULT_CMYK_SCREEN_SETTINGS, type ChannelScreenSettings } from "../lib/color/screening";
-import { exportFinalDtfPng } from "../lib/dtf/export";
+import {
+  DEFAULT_HALFTONE_SETTINGS,
+  runHalftoneEngine,
+  renderColorLayer,
+  renderWhiteLayer,
+  composeDtfPreview,
+  embedPngDpi,
+  type HalftoneAlgorithm,
+  type HalftoneSettings,
+  type WhiteMode,
+} from "../lib/halftone";
 
-type CmykChannelKey = "cyan" | "magenta" | "yellow" | "black";
-type CmykPreviewMode = "composite" | CmykChannelKey | "white";
 type HalftoneProfile = "am_conventional" | "am_ellipse" | "am_rosette" | "fm_stochastic" | "hybrid";
 
 const HALFTONE_PROFILE_LABEL: Record<HalftoneProfile, string> = {
@@ -86,8 +83,7 @@ export default function HalftoneStudio() {
     let removeHalo = false;
     let isExporting = false;
 
-    // --- Halftone Engine PRO (AM/FM/Hybrid + White Underbase + independent CMYK) ---
-    // This is now the ONLY engine used by this component (Legacy and Pro-RGB removed in PASSO 7B).
+    // --- Halftone Engine PRO RGB (AM/FM/Hybrid + White Underbase) ---
     let whiteMode: WhiteMode = "none";
     let whiteDensity = DEFAULT_HALFTONE_SETTINGS.whiteDensity;
     let whiteChoke = DEFAULT_HALFTONE_SETTINGS.whiteChoke;
@@ -96,19 +92,11 @@ export default function HalftoneStudio() {
     const whiteGamma = DEFAULT_HALFTONE_SETTINGS.whiteGamma;
     let whiteDotShape: ScreenShape = DEFAULT_HALFTONE_SETTINGS.whiteDotShape;
     let whiteAlgorithm: HalftoneAlgorithm = DEFAULT_HALFTONE_SETTINGS.whiteAlgorithm;
-
-    // Independent C/M/Y/K screening + White + subtractive preview. White reuses the whiteMode/
-    // whiteDensity/... vars above (never duplicated).
-    let cyanAlgorithm: HalftoneAlgorithm = DEFAULT_CMYK_SCREEN_SETTINGS.cyan.algorithm;
-    let magentaAlgorithm: HalftoneAlgorithm = DEFAULT_CMYK_SCREEN_SETTINGS.magenta.algorithm;
-    let yellowAlgorithm: HalftoneAlgorithm = DEFAULT_CMYK_SCREEN_SETTINGS.yellow.algorithm;
-    let blackAlgorithm: HalftoneAlgorithm = DEFAULT_CMYK_SCREEN_SETTINGS.black.algorithm;
-    let cmykPreviewMode: CmykPreviewMode = "composite";
-    let cmykDotShape: ScreenShape = DEFAULT_CMYK_SCREEN_SETTINGS.cyan.dotShape as ScreenShape;
-    let cmykLpi = DEFAULT_CMYK_SCREEN_SETTINGS.cyan.lpi;
+    let halftoneAlgorithm: HalftoneAlgorithm = DEFAULT_HALFTONE_SETTINGS.algorithm;
+    let screenDotShape: ScreenShape = DEFAULT_HALFTONE_SETTINGS.dotShape;
+    let screenLpi = DEFAULT_HALFTONE_SETTINGS.lpi;
+    const screenAngle = DEFAULT_HALFTONE_SETTINGS.angle;
     let halftoneProfile: HalftoneProfile = "am_conventional";
-    let cmykLastLayers: PrintLayerSet | null = null;
-    void initRealtimeWasmBridge();
 
     // Celulares têm bem menos memória/limite de dimensão de canvas do que desktop; limitar lado e área evita a página travar/recarregar em A2/A3.
     const isMobileDevice = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -203,7 +191,7 @@ export default function HalftoneStudio() {
       const whiteChokeEl = container.querySelector("#whiteChokeVal");
       if (whiteChokeEl) whiteChokeEl.textContent = ($("whiteChoke") as HTMLInputElement).value + "px";
       const profileInfo = container.querySelector("#profileInfo");
-      if (profileInfo) profileInfo.textContent = `${HALFTONE_PROFILE_LABEL[halftoneProfile]} • ${cmykLpi} LPI • ${cmykDotShape}`;
+      if (profileInfo) profileInfo.textContent = `${HALFTONE_PROFILE_LABEL[halftoneProfile]} • ${screenLpi} LPI • ${screenDotShape}`;
       updateLpiAvailability();
     }
     // PASSO 4: em FM, o LPI não é utilizado (a densidade micro é controlada pela
@@ -212,52 +200,39 @@ export default function HalftoneStudio() {
     function updateLpiAvailability() {
       return;
     }
-    // PASSO 6G: same "FM ignores LPI" convention as updateLpiAvailability(), applied per CMYK channel.
-    function cmykChannelAlgorithm(key: CmykChannelKey): HalftoneAlgorithm {
-      if (key === "cyan") return cyanAlgorithm;
-      if (key === "magenta") return magentaAlgorithm;
-      if (key === "yellow") return yellowAlgorithm;
-      return blackAlgorithm;
-    }
     function applyHalftoneProfile(profile: HalftoneProfile) {
       halftoneProfile = profile;
-      const assignAlgorithms = (algo: HalftoneAlgorithm) => {
-        cyanAlgorithm = algo;
-        magentaAlgorithm = algo;
-        yellowAlgorithm = algo;
-        blackAlgorithm = algo;
-        whiteAlgorithm = algo;
-      };
       if (profile === "am_ellipse") {
-        cmykLpi = 50;
-        cmykDotShape = "ellipse";
-        assignAlgorithms("am");
+        screenLpi = 50;
+        screenDotShape = "ellipse";
+        halftoneAlgorithm = "am";
       } else if (profile === "am_rosette") {
-        cmykLpi = 55;
-        cmykDotShape = "rosette";
-        assignAlgorithms("am");
+        screenLpi = 55;
+        screenDotShape = "rosette";
+        halftoneAlgorithm = "am";
       } else if (profile === "fm_stochastic") {
-        cmykLpi = 40;
-        cmykDotShape = "round";
-        assignAlgorithms("fm");
+        screenLpi = 40;
+        screenDotShape = "round";
+        halftoneAlgorithm = "fm";
       } else if (profile === "hybrid") {
-        cmykLpi = 45;
-        cmykDotShape = "round";
-        assignAlgorithms("hybrid");
+        screenLpi = 45;
+        screenDotShape = "round";
+        halftoneAlgorithm = "hybrid";
       } else {
-        cmykLpi = 45;
-        cmykDotShape = "round";
-        assignAlgorithms("am");
+        screenLpi = 45;
+        screenDotShape = "round";
+        halftoneAlgorithm = "am";
       }
-      whiteDotShape = cmykDotShape;
-      whiteLpi = Math.max(20, cmykLpi - 2);
+      whiteAlgorithm = halftoneAlgorithm;
+      whiteDotShape = screenDotShape;
+      whiteLpi = Math.max(20, screenLpi - 2);
       labels();
     }
-    function updateCmykExportState() {
+    function updateExportState() {
       const btn = container.querySelector<HTMLButtonElement>("#saveBtn");
       if (!btn) return;
       btn.disabled = false;
-      btn.title = "Gera o PNG final DTF (White + CMYK + Alpha) em 300 DPI, pronto para impressão.";
+      btn.title = "Gera PNG final em padrão RGB com retícula e 300 DPI.";
       btn.textContent = "Baixar PNG (300 DPI)";
     }
     function targetSize(): [number, number] {
@@ -844,84 +819,43 @@ export default function HalftoneStudio() {
       }
       ctx.putImageData(imgd, 0, 0);
     }
-    // --- Halftone PRO (RGBA -> buildPrintLayerSet -> PrintLayerSet -> composePrintPreview) ---
-    // This is the ONLY processing pipeline used by this component. It never touches
-    // am.ts/fm.ts/hybrid.ts/separation.ts/screening.ts/white.ts/choke.ts math.
-    function buildCmykChannelSettingsFromUI(key: CmykChannelKey): ChannelScreenSettings {
-      const base = DEFAULT_CMYK_SCREEN_SETTINGS[key];
+    function buildHalftoneSettingsFromUI(): HalftoneSettings {
       return {
-        ...base,
-        lpi: cmykLpi,
-        angle: base.angle,
-        algorithm: cmykChannelAlgorithm(key),
-        dotShape: cmykDotShape,
-      };
-    }
-    function buildPrintEngineSettingsFromUI(): PrintEngineSettings {
-      return {
+        ...DEFAULT_HALFTONE_SETTINGS,
         dpi,
-        color: DEFAULT_COLOR_SEPARATION_SETTINGS,
-        cmyk: {
-          cyan: buildCmykChannelSettingsFromUI("cyan"),
-          magenta: buildCmykChannelSettingsFromUI("magenta"),
-          yellow: buildCmykChannelSettingsFromUI("yellow"),
-          black: buildCmykChannelSettingsFromUI("black"),
-        },
-        // Reuses the same White Underbase controls as the Pro RGB engine — never duplicated state.
-        white: {
-          whiteMode,
-          whiteDensity,
-          whiteChoke,
-          whiteLpi,
-          whiteAngle,
-          whiteDotShape,
-          whiteAlgorithm,
-          whiteGamma,
-          minDot: DEFAULT_HALFTONE_SETTINGS.minDot,
-          maxDot: DEFAULT_HALFTONE_SETTINGS.maxDot,
-          hybridThreshold: DEFAULT_HALFTONE_SETTINGS.hybridThreshold,
-        },
+        lpi: screenLpi,
+        angle: screenAngle,
+        algorithm: halftoneAlgorithm,
+        dotShape: screenDotShape,
+        colorMode: "rgb",
+        whiteMode,
+        whiteDensity,
+        whiteChoke,
+        whiteLpi,
+        whiteAngle,
+        whiteDotShape,
+        whiteAlgorithm,
+        whiteGamma,
       };
     }
-    // Isolated single-channel diagnostic view (PASSO 6G section 19) — mirrors dtf/lab/lab.ts's
-    // renderChannelPreview() but kept local so lab.ts's "never touches HalftoneStudio.tsx" stays true.
-    function renderCmykChannelDiagnostic(layers: PrintLayerSet, channel: CmykChannelKey | "white"): RasterBuffer {
-      const buffer: RasterBuffer = { data: new Uint8ClampedArray(layers.width * layers.height * 4), width: layers.width, height: layers.height };
-      if (channel === "white") {
-        if (layers.white.mode === "solid" && layers.white.coverage) paintCoverageGrid(buffer, layers.white.coverage, CHANNEL_COLORS.white);
-        else if (layers.white.mode === "halftone" && layers.white.dots) paintDots(buffer, layers.white.dots, CHANNEL_COLORS.white);
-        return buffer;
-      }
-      paintDots(buffer, layers[channel], CHANNEL_COLORS[channel]);
-      return buffer;
-    }
-    // Redraws the cached PrintLayerSet into `result` for the selected diagnostic channel, without
-    // recomputing buildPrintLayerSet() — keeps the Composto/C/M/Y/K/W toggle cheap.
-    function renderCmykPreviewToResult() {
-      if (!cmykLastLayers) return;
-      const layers = cmykLastLayers;
-      const buffer: RasterBuffer =
-        cmykPreviewMode === "composite"
-          ? composePrintPreview(layers, { background: [255, 255, 255, 255] })
-          : renderCmykChannelDiagnostic(layers, cmykPreviewMode);
-      const imgd = rctx.createImageData(layers.width, layers.height);
-      imgd.data.set(buffer.data);
-      rctx.clearRect(0, 0, result.width, result.height);
-      rctx.putImageData(imgd, 0, 0);
-    }
-    function halftoneProCmyk() {
+    function halftoneProRgb() {
       const w = clean.width,
         h = clean.height;
       if (!w || !h) return;
-      // Saturation/Contrast are applied to the bg-removed input BEFORE CMYK separation — this is
-      // the only place they can affect the actual exported PrintLayerSet (the CMYK math itself is
-      // never modified).
+      // Saturação/contraste entram antes da geração de pontos para afetar a cobertura RGB final.
       adjust(clean);
-      const settings = buildPrintEngineSettingsFromUI();
       const imgd = cctx.getImageData(0, 0, w, h);
-      const realtimeEngine = resolveRealtimePrintEngine();
-      cmykLastLayers = realtimeEngine.buildLayerSet(imgd.data, w, h, settings);
-      renderCmykPreviewToResult();
+      const settings = buildHalftoneSettingsFromUI();
+      const layers = runHalftoneEngine(imgd.data, w, h, settings);
+      const colorCellPx = Math.max(1.1, settings.dpi / settings.lpi);
+      const colorLayer = renderColorLayer(clean, layers.colorDots, colorCellPx, settings.angle);
+      const whiteCellPx = Math.max(1.1, settings.dpi / Math.max(1, settings.whiteLpi));
+      const whiteLayer = renderWhiteLayer(w, h, layers.whiteDots, layers.whiteSolidCoverage, whiteCellPx, settings.whiteAngle);
+      const preview = composeDtfPreview(colorLayer, whiteLayer, "composite");
+      result.width = w;
+      result.height = h;
+      rctx.clearRect(0, 0, w, h);
+      rctx.drawImage(preview, 0, 0);
     }
 
     function render() {
@@ -994,13 +928,13 @@ export default function HalftoneStudio() {
         octx.drawImage(img, 0, 0, w, h);
         if (mode === "color" && !manualBgColor) detectBorderColor(false);
         removeBg();
-        halftoneProCmyk();
+        halftoneProRgb();
         showBefore = false;
         render();
         fit();
         $("empty").style.display = "none";
         const u = currentUnit();
-        $("sizeInfo").textContent = `Saída: ${fmtUnit(pxToUnit(w, u, dpi), u)} × ${fmtUnit(pxToUnit(h, u, dpi), u)} • ${dpi} DPI • ${HALFTONE_PROFILE_LABEL[halftoneProfile]} • ${cmykLpi} LPI`;
+        $("sizeInfo").textContent = `Saída: ${fmtUnit(pxToUnit(w, u, dpi), u)} × ${fmtUnit(pxToUnit(h, u, dpi), u)} • ${dpi} DPI • ${HALFTONE_PROFILE_LABEL[halftoneProfile]} • ${screenLpi} LPI`;
         setStatus("Pronto. Sua arte foi processada com sucesso.");
       } catch (err) {
         console.error(err);
@@ -1069,7 +1003,7 @@ export default function HalftoneStudio() {
     }
     async function save() {
       if (isExporting) return;
-      if (!cmykLastLayers) {
+      if (!result.width || !result.height) {
         setStatus("Clique em \"Gerar halftone\" antes de baixar.");
         return;
       }
@@ -1078,15 +1012,19 @@ export default function HalftoneStudio() {
       const oldText = btn.textContent;
       btn.disabled = true;
       btn.textContent = "Preparando PNG...";
-      setStatus("Compondo White + CMYK + Alpha em PNG final 300 DPI...");
+      setStatus("Gerando PNG final em RGB com retícula (300 DPI)...");
       try {
         const baseName = imgName.replace(/\.(png|jpg|jpeg|webp)$/i, "");
-        const { filename, bytes } = exportFinalDtfPng(cmykLastLayers, baseName);
-        downloadBytes(bytes, filename, "image/png");
-        setStatus("Download iniciado (PNG final DTF, 300 DPI). Verifique a pasta de downloads.");
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          result.toBlob((b) => (b ? resolve(b) : reject(new Error("Não foi possível gerar o PNG."))), "image/png", 1);
+        });
+        const withDpi = await embedPngDpi(blob, dpi);
+        const bytes = new Uint8Array(await withDpi.arrayBuffer());
+        downloadBytes(bytes, `${baseName}_halftone_rgb.png`, "image/png");
+        setStatus("Download iniciado (PNG RGB com retícula, 300 DPI). Verifique a pasta de downloads.");
       } catch (err) {
         console.error(err);
-        setStatus("Erro ao exportar PNG final DTF.");
+        setStatus("Erro ao exportar PNG RGB com retícula.");
       } finally {
         isExporting = false;
         btn.disabled = false;
@@ -1352,15 +1290,6 @@ export default function HalftoneStudio() {
         process();
       })
     );
-    container.querySelectorAll<HTMLButtonElement>("#cmykPreviewChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#cmykPreviewChips .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        cmykPreviewMode = (b.dataset.cmykpreview as CmykPreviewMode) || "composite";
-        renderCmykPreviewToResult();
-        render();
-      })
-    );
     container.querySelectorAll<HTMLButtonElement>("#whiteModeChips .chip").forEach((b) =>
       b.addEventListener("click", () => {
         container.querySelectorAll("#whiteModeChips .chip").forEach((x) => x.classList.remove("active"));
@@ -1558,7 +1487,7 @@ export default function HalftoneStudio() {
 
     applyHalftoneProfile("am_conventional");
     labels();
-    updateCmykExportState();
+    updateExportState();
 
     return () => {
       window.removeEventListener("resize", responsiveFit);
@@ -1705,14 +1634,14 @@ export default function HalftoneStudio() {
           <div className="section">
             <div className="sectionTitle">Motor de halftone</div>
             <div className="dica">
-              <b>Halftone PRO.</b> Reticula real AM/FM/Hybrid, CMYK independente e White Underbase separado — único motor desta interface.
+              <b>Halftone PRO RGB.</b> Retícula real AM/FM/Híbrida em padrão RGB, com White Underbase opcional.
             </div>
           </div>
 
-          <div className="section" id="proCmykSection">
+          <div className="section" id="proScreenSection">
             <div className="sectionTitle">Retícula profissional (simples)</div>
             <div className="dica">
-              <b>Escolha um perfil pronto.</b> O motor profissional ajusta CMYK + White internamente para impressão DTF.
+              <b>Escolha o tipo de retícula.</b> O motor RGB aplica o padrão escolhido na arte sem separar em CMYK.
             </div>
             <div className="chips" id="halftoneProfileChips">
               <button className="chip active" data-profile="am_conventional">AM Convencional</button>
@@ -1724,15 +1653,8 @@ export default function HalftoneStudio() {
             <div className="miniText" id="profileInfo" style={{ marginTop: 8 }}>
               AM Convencional • 45 LPI • round
             </div>
-            <div className="row" style={{ marginTop: 14 }}>
-              <label>Preview</label>
-            </div>
-            <div className="chips" id="cmykPreviewChips">
-              <button className="chip active" data-cmykpreview="composite">Final</button>
-              <button className="chip" data-cmykpreview="white">Base branca</button>
-            </div>
             <div className="dica" style={{ marginTop: 8 }}>
-              <b>Exportação:</b> PNG final DTF (White + CMYK + Alpha) em 300 DPI, pronto para impressão.
+              <b>Exportação:</b> PNG final RGB com retícula em 300 DPI, pronto para impressão.
             </div>
           </div>
 
