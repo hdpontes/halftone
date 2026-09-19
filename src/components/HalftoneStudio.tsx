@@ -16,13 +16,15 @@ import { exportFinalDtfPng } from "../lib/dtf/export";
 
 type CmykChannelKey = "cyan" | "magenta" | "yellow" | "black";
 type CmykPreviewMode = "composite" | CmykChannelKey | "white";
+type HalftoneProfile = "balanced" | "detail" | "soft" | "stochastic" | "hybrid";
 
-const CMYK_CHANNELS: { key: CmykChannelKey; label: string }[] = [
-  { key: "cyan", label: "Cyan (C)" },
-  { key: "magenta", label: "Magenta (M)" },
-  { key: "yellow", label: "Yellow (Y)" },
-  { key: "black", label: "Black (K)" },
-];
+const HALFTONE_PROFILE_LABEL: Record<HalftoneProfile, string> = {
+  balanced: "Padrão DTF",
+  detail: "Detalhe Fino",
+  soft: "Suave",
+  stochastic: "Estocástico (FM)",
+  hybrid: "Híbrido",
+};
 
 /**
  * Halftone Online Pro - client-side halftone studio (upload, remoção de fundo,
@@ -89,8 +91,8 @@ export default function HalftoneStudio() {
     let whiteDensity = DEFAULT_HALFTONE_SETTINGS.whiteDensity;
     let whiteChoke = DEFAULT_HALFTONE_SETTINGS.whiteChoke;
     let whiteLpi = DEFAULT_HALFTONE_SETTINGS.whiteLpi;
-    let whiteAngle = DEFAULT_HALFTONE_SETTINGS.whiteAngle;
-    let whiteGamma = DEFAULT_HALFTONE_SETTINGS.whiteGamma;
+    const whiteAngle = DEFAULT_HALFTONE_SETTINGS.whiteAngle;
+    const whiteGamma = DEFAULT_HALFTONE_SETTINGS.whiteGamma;
     let whiteDotShape: ScreenShape = DEFAULT_HALFTONE_SETTINGS.whiteDotShape;
     let whiteAlgorithm: HalftoneAlgorithm = DEFAULT_HALFTONE_SETTINGS.whiteAlgorithm;
 
@@ -101,6 +103,9 @@ export default function HalftoneStudio() {
     let yellowAlgorithm: HalftoneAlgorithm = DEFAULT_CMYK_SCREEN_SETTINGS.yellow.algorithm;
     let blackAlgorithm: HalftoneAlgorithm = DEFAULT_CMYK_SCREEN_SETTINGS.black.algorithm;
     let cmykPreviewMode: CmykPreviewMode = "composite";
+    let cmykDotShape: ScreenShape = DEFAULT_CMYK_SCREEN_SETTINGS.cyan.dotShape as ScreenShape;
+    let cmykLpi = DEFAULT_CMYK_SCREEN_SETTINGS.cyan.lpi;
+    let halftoneProfile: HalftoneProfile = "balanced";
     let cmykLastLayers: PrintLayerSet | null = null;
 
     // Celulares têm bem menos memória/limite de dimensão de canvas do que desktop; limitar lado e área evita a página travar/recarregar em A2/A3.
@@ -195,32 +200,15 @@ export default function HalftoneStudio() {
       if (whiteDensityEl) whiteDensityEl.textContent = ($("whiteDensity") as HTMLInputElement).value + "%";
       const whiteChokeEl = container.querySelector("#whiteChokeVal");
       if (whiteChokeEl) whiteChokeEl.textContent = ($("whiteChoke") as HTMLInputElement).value + "px";
-      const whiteLpiEl = container.querySelector("#whiteLpiVal");
-      if (whiteLpiEl) whiteLpiEl.textContent = ($("whiteLpi") as HTMLInputElement).value;
-      const whiteAngleEl = container.querySelector("#whiteAngleVal");
-      if (whiteAngleEl) whiteAngleEl.textContent = ($("whiteAngle") as HTMLInputElement).value + "°";
-      const whiteGammaEl = container.querySelector("#whiteGammaVal");
-      if (whiteGammaEl) whiteGammaEl.textContent = Number(($("whiteGamma") as HTMLInputElement).value).toFixed(2);
-      CMYK_CHANNELS.forEach(({ key }) => {
-        const lpiEl = container.querySelector(`#${key}LpiVal`);
-        const lpiInput = container.querySelector<HTMLInputElement>(`#${key}Lpi`);
-        if (lpiEl && lpiInput) lpiEl.textContent = lpiInput.value;
-        const angleEl = container.querySelector(`#${key}AngleVal`);
-        const angleInput = container.querySelector<HTMLInputElement>(`#${key}Angle`);
-        if (angleEl && angleInput) angleEl.textContent = angleInput.value + "°";
-      });
+      const profileInfo = container.querySelector("#profileInfo");
+      if (profileInfo) profileInfo.textContent = `${HALFTONE_PROFILE_LABEL[halftoneProfile]} • ${cmykLpi} LPI • ${cmykDotShape}`;
       updateLpiAvailability();
-      updateCmykLpiAvailability();
     }
     // PASSO 4: em FM, o LPI não é utilizado (a densidade micro é controlada pela
     // matemática interna do FM, não por uma grade AM). Não altera a matemática do FM —
     // apenas desabilita/anota visualmente o controle de LPI correspondente.
     function updateLpiAvailability() {
-      const whiteLpiInput = container.querySelector<HTMLInputElement>("#whiteLpi");
-      const whiteLpiNote = container.querySelector<HTMLElement>("#whiteLpiFmNote");
-      const isWhiteFm = whiteAlgorithm === "fm";
-      if (whiteLpiInput) whiteLpiInput.disabled = isWhiteFm;
-      if (whiteLpiNote) whiteLpiNote.style.display = isWhiteFm ? "block" : "none";
+      return;
     }
     // PASSO 6G: same "FM ignores LPI" convention as updateLpiAvailability(), applied per CMYK channel.
     function cmykChannelAlgorithm(key: CmykChannelKey): HalftoneAlgorithm {
@@ -229,14 +217,39 @@ export default function HalftoneStudio() {
       if (key === "yellow") return yellowAlgorithm;
       return blackAlgorithm;
     }
-    function updateCmykLpiAvailability() {
-      CMYK_CHANNELS.forEach(({ key }) => {
-        const lpiInput = container.querySelector<HTMLInputElement>(`#${key}Lpi`);
-        const note = container.querySelector<HTMLElement>(`#${key}LpiFmNote`);
-        const isFm = cmykChannelAlgorithm(key) === "fm";
-        if (lpiInput) lpiInput.disabled = isFm;
-        if (note) note.style.display = isFm ? "block" : "none";
-      });
+    function applyHalftoneProfile(profile: HalftoneProfile) {
+      halftoneProfile = profile;
+      const assignAlgorithms = (algo: HalftoneAlgorithm) => {
+        cyanAlgorithm = algo;
+        magentaAlgorithm = algo;
+        yellowAlgorithm = algo;
+        blackAlgorithm = algo;
+        whiteAlgorithm = algo;
+      };
+      if (profile === "detail") {
+        cmykLpi = 55;
+        cmykDotShape = "ellipse";
+        assignAlgorithms("am");
+      } else if (profile === "soft") {
+        cmykLpi = 35;
+        cmykDotShape = "round";
+        assignAlgorithms("am");
+      } else if (profile === "stochastic") {
+        cmykLpi = 45;
+        cmykDotShape = "round";
+        assignAlgorithms("fm");
+      } else if (profile === "hybrid") {
+        cmykLpi = 45;
+        cmykDotShape = "rosette";
+        assignAlgorithms("hybrid");
+      } else {
+        cmykLpi = 45;
+        cmykDotShape = "round";
+        assignAlgorithms("am");
+      }
+      whiteDotShape = cmykDotShape;
+      whiteLpi = Math.max(20, cmykLpi - 2);
+      labels();
     }
     function updateCmykExportState() {
       const btn = container.querySelector<HTMLButtonElement>("#saveBtn");
@@ -836,9 +849,10 @@ export default function HalftoneStudio() {
       const base = DEFAULT_CMYK_SCREEN_SETTINGS[key];
       return {
         ...base,
-        lpi: Number(($(`${key}Lpi`) as HTMLInputElement)?.value || base.lpi),
-        angle: Number(($(`${key}Angle`) as HTMLInputElement)?.value ?? base.angle),
+        lpi: cmykLpi,
+        angle: base.angle,
         algorithm: cmykChannelAlgorithm(key),
+        dotShape: cmykDotShape,
       };
     }
     function buildPrintEngineSettingsFromUI(): PrintEngineSettings {
@@ -967,25 +981,30 @@ export default function HalftoneStudio() {
       labels();
       loading(true, "Processando...");
       setStatus("Processando halftone...");
-      await new Promise((r) => setTimeout(r, 25));
-      const [w, h] = targetSize();
-      setCanv(w, h);
-      octx.imageSmoothingEnabled = true;
-      octx.imageSmoothingQuality = "high";
-      octx.clearRect(0, 0, w, h);
-      octx.drawImage(img, 0, 0, w, h);
-      if (mode === "color" && !manualBgColor) detectBorderColor(false);
-      removeBg();
-      halftoneProCmyk();
-      showBefore = false;
-      render();
-      fit();
-      $("empty").style.display = "none";
-      const u = currentUnit();
-      const lpiVal = Number(($("lpi") as HTMLInputElement).value);
-      $("sizeInfo").textContent = `Saída: ${fmtUnit(pxToUnit(w, u, dpi), u)} × ${fmtUnit(pxToUnit(h, u, dpi), u)} • ${dpi} DPI • ${lpiVal} LPI`;
-      setStatus("Pronto. Sua arte foi processada com sucesso.");
-      loading(false);
+      try {
+        await new Promise((r) => setTimeout(r, 25));
+        const [w, h] = targetSize();
+        setCanv(w, h);
+        octx.imageSmoothingEnabled = true;
+        octx.imageSmoothingQuality = "high";
+        octx.clearRect(0, 0, w, h);
+        octx.drawImage(img, 0, 0, w, h);
+        if (mode === "color" && !manualBgColor) detectBorderColor(false);
+        removeBg();
+        halftoneProCmyk();
+        showBefore = false;
+        render();
+        fit();
+        $("empty").style.display = "none";
+        const u = currentUnit();
+        $("sizeInfo").textContent = `Saída: ${fmtUnit(pxToUnit(w, u, dpi), u)} × ${fmtUnit(pxToUnit(h, u, dpi), u)} • ${dpi} DPI • ${HALFTONE_PROFILE_LABEL[halftoneProfile]} • ${cmykLpi} LPI`;
+        setStatus("Pronto. Sua arte foi processada com sucesso.");
+      } catch (err) {
+        console.error(err);
+        setStatus("Erro ao processar a imagem. Ajuste os controles e tente novamente.");
+      } finally {
+        loading(false);
+      }
     }
     function computeContentBounds(canvas: HTMLCanvasElement) {
       const w = canvas.width,
@@ -1322,28 +1341,14 @@ export default function HalftoneStudio() {
         process();
       })
     );
-    CMYK_CHANNELS.forEach(({ key }) => {
-      const lpiEl = container.querySelector<HTMLInputElement>(`#${key}Lpi`);
-      const angleEl = container.querySelector<HTMLInputElement>(`#${key}Angle`);
-      [lpiEl, angleEl].forEach((el) => {
-        if (!el) return;
-        el.addEventListener("input", labels);
-        el.addEventListener("change", process);
-      });
-      container.querySelectorAll<HTMLButtonElement>(`#${key}AlgoChips .chip`).forEach((b) =>
-        b.addEventListener("click", () => {
-          container.querySelectorAll(`#${key}AlgoChips .chip`).forEach((x) => x.classList.remove("active"));
-          b.classList.add("active");
-          const value = (b.dataset.algo as HalftoneAlgorithm) || "am";
-          if (key === "cyan") cyanAlgorithm = value;
-          else if (key === "magenta") magentaAlgorithm = value;
-          else if (key === "yellow") yellowAlgorithm = value;
-          else blackAlgorithm = value;
-          updateCmykLpiAvailability();
-          process();
-        })
-      );
-    });
+    container.querySelectorAll<HTMLButtonElement>("#halftoneProfileChips .chip").forEach((b) =>
+      b.addEventListener("click", () => {
+        container.querySelectorAll("#halftoneProfileChips .chip").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        applyHalftoneProfile((b.dataset.profile as HalftoneProfile) || "balanced");
+        process();
+      })
+    );
     container.querySelectorAll<HTMLButtonElement>("#cmykPreviewChips .chip").forEach((b) =>
       b.addEventListener("click", () => {
         container.querySelectorAll("#cmykPreviewChips .chip").forEach((x) => x.classList.remove("active"));
@@ -1359,23 +1364,6 @@ export default function HalftoneStudio() {
         b.classList.add("active");
         whiteMode = (b.dataset.white as WhiteMode) || "none";
         $("whiteWrap").style.display = whiteMode === "none" ? "none" : "block";
-        $("whiteHalftoneWrap").style.display = whiteMode === "halftone" ? "block" : "none";
-        process();
-      })
-    );
-    container.querySelectorAll<HTMLButtonElement>("#whiteAlgoChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#whiteAlgoChips .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        whiteAlgorithm = (b.dataset.whitealgo as HalftoneAlgorithm) || "am";
-        process();
-      })
-    );
-    container.querySelectorAll<HTMLButtonElement>("#whiteShapeChips .chip").forEach((b) =>
-      b.addEventListener("click", () => {
-        container.querySelectorAll("#whiteShapeChips .chip").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        whiteDotShape = (b.dataset.whiteshape as ScreenShape) || "round";
         process();
       })
     );
@@ -1389,21 +1377,6 @@ export default function HalftoneStudio() {
       labels();
     });
     $("whiteChoke").addEventListener("change", process);
-    $("whiteLpi").addEventListener("input", () => {
-      whiteLpi = Number(($("whiteLpi") as HTMLInputElement).value);
-      labels();
-    });
-    $("whiteLpi").addEventListener("change", process);
-    $("whiteAngle").addEventListener("input", () => {
-      whiteAngle = Number(($("whiteAngle") as HTMLInputElement).value);
-      labels();
-    });
-    $("whiteAngle").addEventListener("change", process);
-    $("whiteGamma").addEventListener("input", () => {
-      whiteGamma = Number(($("whiteGamma") as HTMLInputElement).value);
-      labels();
-    });
-    $("whiteGamma").addEventListener("change", process);
     ["removePower", "bgPower", "colorResidual", "saturation", "contrast", "colorTol"].forEach((id) => {
       const el = container.querySelector<HTMLInputElement>("#" + id);
       if (!el) return;
@@ -1580,6 +1553,7 @@ export default function HalftoneStudio() {
     window.addEventListener("orientationchange", onOrientation);
     window.visualViewport?.addEventListener("resize", responsiveFit);
 
+    applyHalftoneProfile("balanced");
     labels();
     updateCmykExportState();
 
@@ -1733,45 +1707,26 @@ export default function HalftoneStudio() {
           </div>
 
           <div className="section" id="proCmykSection">
-            <div className="sectionTitle">CMYK independente</div>
+            <div className="sectionTitle">Retícula profissional (simples)</div>
             <div className="dica">
-              <b>CMYK + White Underbase.</b> Preview CMYK — aproximação visual (não é uma simulação física da impressão/RIP).
+              <b>Escolha um perfil pronto.</b> O motor profissional ajusta CMYK + White internamente para impressão DTF.
             </div>
-            {CMYK_CHANNELS.map(({ key, label }) => (
-              <div key={key} style={{ marginTop: 12 }}>
-                <div className="row">
-                  <label>{label} — LPI</label>
-                  <span className="val" id={`${key}LpiVal`}>{DEFAULT_CMYK_SCREEN_SETTINGS[key].lpi}</span>
-                </div>
-                <input id={`${key}Lpi`} type="range" min={10} max={85} defaultValue={DEFAULT_CMYK_SCREEN_SETTINGS[key].lpi} step={1} />
-                <div className="dica" id={`${key}LpiFmNote`} style={{ display: "none" }}>
-                  <b>FM ativo:</b> LPI não controla a densidade neste modo.
-                </div>
-                <div className="row" style={{ marginTop: 8 }}>
-                  <label>{label} — Ângulo</label>
-                  <span className="val" id={`${key}AngleVal`}>{DEFAULT_CMYK_SCREEN_SETTINGS[key].angle}°</span>
-                </div>
-                <input id={`${key}Angle`} type="range" min={0} max={90} defaultValue={DEFAULT_CMYK_SCREEN_SETTINGS[key].angle} step={0.5} />
-                <div className="row" style={{ marginTop: 8 }}>
-                  <label>{label} — Algoritmo</label>
-                </div>
-                <div className="chips" id={`${key}AlgoChips`}>
-                  <button className="chip active" data-algo="am">AM</button>
-                  <button className="chip" data-algo="fm">FM</button>
-                  <button className="chip" data-algo="hybrid">Hybrid</button>
-                </div>
-              </div>
-            ))}
+            <div className="chips" id="halftoneProfileChips">
+              <button className="chip active" data-profile="balanced">Padrão DTF</button>
+              <button className="chip" data-profile="detail">Detalhe Fino</button>
+              <button className="chip" data-profile="soft">Suave</button>
+              <button className="chip" data-profile="stochastic">Estocástico (FM)</button>
+              <button className="chip" data-profile="hybrid">Híbrido</button>
+            </div>
+            <div className="miniText" id="profileInfo" style={{ marginTop: 8 }}>
+              Padrão DTF • 45 LPI • round
+            </div>
             <div className="row" style={{ marginTop: 14 }}>
               <label>Preview</label>
             </div>
             <div className="chips" id="cmykPreviewChips">
-              <button className="chip active" data-cmykpreview="composite">Composto</button>
-              <button className="chip" data-cmykpreview="cyan">C</button>
-              <button className="chip" data-cmykpreview="magenta">M</button>
-              <button className="chip" data-cmykpreview="yellow">Y</button>
-              <button className="chip" data-cmykpreview="black">K</button>
-              <button className="chip" data-cmykpreview="white">W</button>
+              <button className="chip active" data-cmykpreview="composite">Final</button>
+              <button className="chip" data-cmykpreview="white">Base branca</button>
             </div>
             <div className="dica" style={{ marginTop: 8 }}>
               <b>Exportação:</b> PNG final DTF (White + CMYK + Alpha) em 300 DPI, pronto para impressão.
@@ -1813,37 +1768,6 @@ export default function HalftoneStudio() {
               </button>
             </div>
             <div id="whiteWrap" style={{ display: "none", marginTop: 10 }}>
-              <div className="row">
-                <label>Algoritmo do branco</label>
-              </div>
-              <div className="chips" id="whiteAlgoChips">
-                <button className="chip active" data-whitealgo="am">
-                  AM
-                </button>
-                <button className="chip" data-whitealgo="fm">
-                  FM
-                </button>
-                <button className="chip" data-whitealgo="hybrid">
-                  Hybrid
-                </button>
-              </div>
-              <div className="row" style={{ marginTop: 10 }}>
-                <label>Forma do ponto (branco)</label>
-              </div>
-              <div className="chips" id="whiteShapeChips">
-                <button className="chip active" data-whiteshape="round">
-                  Round
-                </button>
-                <button className="chip" data-whiteshape="ellipse">
-                  Elipse
-                </button>
-                <button className="chip" data-whiteshape="line">
-                  Line
-                </button>
-                <button className="chip" data-whiteshape="square">
-                  Square
-                </button>
-              </div>
               <div className="row" style={{ marginTop: 10 }}>
                 <label>Densidade</label>
                 <span className="val" id="whiteDensityVal">100%</span>
@@ -1854,26 +1778,6 @@ export default function HalftoneStudio() {
                 <span className="val" id="whiteChokeVal">2px</span>
               </div>
               <input id="whiteChoke" type="range" min={0} max={20} defaultValue={2} step={0.5} />
-              <div id="whiteHalftoneWrap" style={{ display: "none" }}>
-                <div className="row" style={{ marginTop: 10 }}>
-                  <label>Frequência do branco (LPI)</label>
-                  <span className="val" id="whiteLpiVal">45</span>
-                </div>
-                <input id="whiteLpi" type="range" min={10} max={85} defaultValue={45} step={1} />
-                <div className="dica" id="whiteLpiFmNote" style={{ display: "none" }}>
-                  <b>FM ativo:</b> a Frequência (LPI) do branco não é utilizada neste modo — a densidade é controlada pela matemática do FM.
-                </div>
-                <div className="row" style={{ marginTop: 10 }}>
-                  <label>Ângulo do branco</label>
-                  <span className="val" id="whiteAngleVal">67.5°</span>
-                </div>
-                <input id="whiteAngle" type="range" min={0} max={90} defaultValue={67.5} step={0.5} />
-              </div>
-              <div className="row" style={{ marginTop: 10 }}>
-                <label>Gamma do branco</label>
-                <span className="val" id="whiteGammaVal">1.00</span>
-              </div>
-              <input id="whiteGamma" type="range" min={0.3} max={3} defaultValue={1} step={0.05} />
               <div className="dica">
                 <b>Dica:</b> o branco é um canal independente do alpha/cor. Choke encolhe geometricamente a base branca para evitar halo nas bordas.
               </div>
